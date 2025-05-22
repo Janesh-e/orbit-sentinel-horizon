@@ -1,3 +1,4 @@
+
 import type { Config } from "tailwindcss";
 
 export default {
@@ -52,16 +53,15 @@ export default {
 					DEFAULT: 'hsl(var(--card))',
 					foreground: 'hsl(var(--card-foreground))'
 				},
-				sidebar: {
-					DEFAULT: 'hsl(var(--sidebar-background))',
-					foreground: 'hsl(var(--sidebar-foreground))',
-					primary: 'hsl(var(--sidebar-primary))',
-					'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
-					accent: 'hsl(var(--sidebar-accent))',
-					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
-					border: 'hsl(var(--sidebar-border))',
-					ring: 'hsl(var(--sidebar-ring))'
-				}
+                space: {
+                    'blue': '#0B3D91',
+                    'dark': '#0A0E17',
+                    'darker': '#050A14',
+                    'accent': '#00D2FF',
+                    'accent-alt': '#FF710D',
+                    'grid': '#0F2747',
+                    'overlay': 'rgba(11, 27, 48, 0.5)'
+                }
 			},
 			borderRadius: {
 				lg: 'var(--radius)',
@@ -84,11 +84,31 @@ export default {
 					to: {
 						height: '0'
 					}
-				}
+				},
+                'pulse-glow': {
+                    '0%, 100%': {
+                        opacity: '1',
+                        boxShadow: '0 0 10px rgba(0, 210, 255, 0.5)'
+                    },
+                    '50%': {
+                        opacity: '0.7',
+                        boxShadow: '0 0 20px rgba(0, 210, 255, 0.8)'
+                    }
+                },
+                'orbit': {
+                    '0%': {
+                        transform: 'rotate(0deg) translateX(20px) rotate(0deg)'
+                    },
+                    '100%': {
+                        transform: 'rotate(360deg) translateX(20px) rotate(-360deg)'
+                    }
+                }
 			},
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
-				'accordion-up': 'accordion-up 0.2s ease-out'
+				'accordion-up': 'accordion-up 0.2s ease-out',
+                'pulse-glow': 'pulse-glow 3s infinite ease-in-out',
+                'orbit': 'orbit 10s linear infinite',
 			}
 		}
 	},
