@@ -1,7 +1,8 @@
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { SatelliteData } from '@/utils/satelliteData';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface DebrisSimulationProps {
   satellites: SatelliteData[];
@@ -23,6 +24,8 @@ const DebrisSimulation: React.FC<DebrisSimulationProps> = ({
   const lastMousePos = useRef({ x: 0, y: 0 });
   const rotation = useRef({ x: 0, y: 0 });
   const zoom = useRef(1);
+  const [hoveredSatellite, setHoveredSatellite] = useState<SatelliteData | null>(null);
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -66,8 +69,8 @@ const DebrisSimulation: React.FC<DebrisSimulationProps> = ({
           centerX, 
           centerY, 
           orbitRadius, 
-          orbitRadius * Math.cos(rotation.ref * 0.1), 
-          rotation.x * 0.1, 
+          orbitRadius * Math.cos(rotation.current.x * 0.1), 
+          rotation.current.x * 0.1, 
           0, 
           2 * Math.PI
         );
@@ -96,7 +99,7 @@ const DebrisSimulation: React.FC<DebrisSimulationProps> = ({
         centerX,
         centerY,
         earthRadius,
-        earthRadius * Math.cos(rotation.y * 0.1),
+        earthRadius * Math.cos(rotation.current.y * 0.1),
         0,
         0,
         Math.PI * 2
@@ -110,11 +113,14 @@ const DebrisSimulation: React.FC<DebrisSimulationProps> = ({
         centerY,
         earthRadius,
         earthRadius,
-        Math.PI/2 + rotation.x * 0.1,
+        Math.PI/2 + rotation.current.x * 0.1,
         0,
         Math.PI * 2
       );
       context.stroke();
+      
+      // Reset hovered satellite
+      setHoveredSatellite(null);
       
       // Draw satellites and debris
       satellites.forEach((sat, index) => {
@@ -129,7 +135,7 @@ const DebrisSimulation: React.FC<DebrisSimulationProps> = ({
         
         // Calculate position with inclination
         const x = centerX + orbitRadius * Math.cos(angle) * Math.cos(sat.inclination / 180 * Math.PI * 0.2);
-        const y = centerY + orbitRadius * Math.sin(angle) * Math.sin(rotation.y * 0.1 + sat.inclination / 180 * Math.PI * 0.2);
+        const y = centerY + orbitRadius * Math.sin(angle) * Math.sin(rotation.current.y * 0.1 + sat.inclination / 180 * Math.PI * 0.2);
         
         // Size based on satellite type and selection
         const size = sat.type === 'satellite' ? 4 * zoom.current : 2 * zoom.current;
@@ -171,6 +177,18 @@ const DebrisSimulation: React.FC<DebrisSimulationProps> = ({
           context.lineTo(x, y - 10);
           context.stroke();
         }
+        
+        // Check if mouse is hovering over this satellite
+        if (lastMousePos.current) {
+          const dx = x - lastMousePos.current.x;
+          const dy = y - lastMousePos.current.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (distance < 10 * zoom.current) {
+            setHoveredSatellite(sat);
+            setMousePosition({ x, y });
+          }
+        }
       });
       
       animationRef.current = requestAnimationFrame(draw);
@@ -202,17 +220,21 @@ const DebrisSimulation: React.FC<DebrisSimulationProps> = ({
       lastMousePos.current = { x: e.clientX, y: e.clientY };
     };
 
-    // Handle mouse move for rotation
+    // Handle mouse move for rotation and hover effects
     const handleMouseMove = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      lastMousePos.current = { 
+        x: e.clientX - rect.left, 
+        y: e.clientY - rect.top 
+      };
+      
       if (!isDragging.current) return;
       
-      const deltaX = e.clientX - lastMousePos.current.x;
-      const deltaY = e.clientY - lastMousePos.current.y;
+      const deltaX = e.clientX - (rect.left + lastMousePos.current.x);
+      const deltaY = e.clientY - (rect.top + lastMousePos.current.y);
       
       rotation.current.x += deltaX * 0.005;
       rotation.current.y += deltaY * 0.005;
-      
-      lastMousePos.current = { x: e.clientX, y: e.clientY };
     };
 
     // Handle mouse up to stop rotation
@@ -262,6 +284,26 @@ const DebrisSimulation: React.FC<DebrisSimulationProps> = ({
         ref={canvasRef} 
         className="relative z-10 cursor-move"
       />
+      {hoveredSatellite && (
+        <div 
+          className="absolute z-20 bg-space-overlay border border-space-grid rounded-md p-2 text-xs text-gray-200 max-w-[200px]"
+          style={{ 
+            left: mousePosition.x + 15, 
+            top: mousePosition.y - 15,
+            transform: 'translateY(-100%)'
+          }}
+        >
+          <div className="font-semibold">{hoveredSatellite.name}</div>
+          <div>Type: {hoveredSatellite.type}</div>
+          <div>Orbit: {hoveredSatellite.orbitType}</div>
+          <div>Altitude: {Math.round(hoveredSatellite.altitude)} km</div>
+          {hoveredSatellite.riskFactor && (
+            <div className={hoveredSatellite.riskFactor > 60 ? 'text-red-400' : 'text-green-400'}>
+              Risk: {Math.round(hoveredSatellite.riskFactor)}%
+            </div>
+          )}
+        </div>
+      )}
       <div className="absolute bottom-4 left-4 bg-space-overlay px-2 py-1 rounded text-xs text-gray-300">
         Drag to rotate | Scroll to zoom
       </div>

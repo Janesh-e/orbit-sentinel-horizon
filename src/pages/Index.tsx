@@ -6,6 +6,8 @@ import StatisticsPanel from '@/components/StatisticsPanel';
 import SatelliteList from '@/components/SatelliteList';
 import SatelliteDetails from '@/components/SatelliteDetails';
 import PredictionControls from '@/components/PredictionControls';
+import AlertsLog, { Alert } from '@/components/AlertsLog';
+import DangerThresholdControl from '@/components/DangerThresholdControl';
 import { SatelliteData, ConjunctionEvent, generateInitialData, satelliteStats } from '@/utils/satelliteData';
 
 const Index = () => {
@@ -14,23 +16,97 @@ const Index = () => {
   const [conjunctions, setConjunctions] = useState<ConjunctionEvent[]>([]);
   const [selectedSatellite, setSelectedSatellite] = useState<SatelliteData | null>(null);
   const [simulationTime, setSimulationTime] = useState(0); // hours ahead of current time
+  const [dangerThreshold, setDangerThreshold] = useState(5.0); // in kilometers
+  const [alerts, setAlerts] = useState<Alert[]>([]);
 
   // Initialize data
   useEffect(() => {
     const { satellites, conjunctions } = generateInitialData();
     setSatellites(satellites);
     setConjunctions(conjunctions);
+    
+    // Generate initial alerts from conjunctions
+    const initialAlerts = generateAlertsFromConjunctions(conjunctions);
+    setAlerts(initialAlerts);
   }, []);
+  
+  // Generate alerts from conjunctions
+  const generateAlertsFromConjunctions = (conjs: ConjunctionEvent[]): Alert[] => {
+    return conjs
+      .filter(conj => conj.distance < dangerThreshold) // Only conjunctions below threshold
+      .map(conj => {
+        const alertType = getAlertTypeFromDistance(conj.distance);
+        return {
+          id: `alert-${conj.id}`,
+          timestamp: new Date(conj.time),
+          type: alertType,
+          message: `Potential collision detected between ${conj.primaryObject} and ${conj.secondaryObject}`,
+          details: `Distance: ${conj.distance.toFixed(2)}km | Probability: ${(conj.probability * 100).toFixed(2)}% | Time to closest approach: ${conj.timeToClosestApproach}`,
+          objectIds: [conj.primaryObject, conj.secondaryObject]
+        };
+      })
+      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+      .slice(0, 20); // Limit to 20 most recent alerts
+  };
+  
+  // Get alert type based on distance
+  const getAlertTypeFromDistance = (distance: number): Alert['type'] => {
+    if (distance < 2) return 'danger';
+    if (distance < 5) return 'warning';
+    return 'info';
+  };
 
   // Handle satellite selection
   const handleSelectSatellite = (satellite: SatelliteData) => {
     setSelectedSatellite(satellite);
+    
+    // Add an info alert when selecting a satellite
+    const newAlert: Alert = {
+      id: `select-${Date.now()}`,
+      timestamp: new Date(),
+      type: 'info',
+      message: `Selected satellite: ${satellite.name}`,
+      details: `Orbit: ${satellite.orbitType} | Inclination: ${satellite.inclination.toFixed(2)}° | Altitude: ${satellite.altitude.toFixed(2)}km`
+    };
+    
+    setAlerts(prev => [newAlert, ...prev].slice(0, 50));
   };
 
   // Handle time change in simulation
   const handleTimeChange = (hours: number) => {
     setSimulationTime(hours);
-    // In a real app, you'd update satellite positions based on the time
+    
+    // Add a success alert when changing simulation time
+    if (hours !== 0) {
+      const newAlert: Alert = {
+        id: `time-${Date.now()}`,
+        timestamp: new Date(),
+        type: 'success',
+        message: `Simulation time changed to +${hours}h`,
+        details: 'Orbital positions updated based on predicted trajectories'
+      };
+      
+      setAlerts(prev => [newAlert, ...prev].slice(0, 50));
+    }
+  };
+
+  // Handle danger threshold change
+  const handleThresholdChange = (value: number) => {
+    setDangerThreshold(value);
+    
+    // Regenerate alerts based on new threshold
+    const updatedAlerts = generateAlertsFromConjunctions(conjunctions);
+    
+    // Add an info alert about the threshold change
+    const thresholdAlert: Alert = {
+      id: `threshold-${Date.now()}`,
+      timestamp: new Date(),
+      type: 'info',
+      message: `Danger threshold updated to ${value.toFixed(1)} km`,
+      details: `${updatedAlerts.filter(a => a.type === 'danger').length} critical alerts, ${updatedAlerts.filter(a => a.type === 'warning').length} warnings`
+    };
+    
+    setAlerts([thresholdAlert, ...updatedAlerts].slice(0, 50));
   };
 
   // Toggle sidebar visibility
@@ -79,6 +155,16 @@ const Index = () => {
               <PredictionControls 
                 onTimeChange={handleTimeChange}
               />
+              
+              <DangerThresholdControl
+                value={dangerThreshold}
+                onChange={handleThresholdChange}
+              />
+            </div>
+            
+            {/* Alert Log */}
+            <div className="lg:col-span-3">
+              <AlertsLog alerts={alerts} />
             </div>
             
             {/* Statistics Panel */}
@@ -92,7 +178,7 @@ const Index = () => {
       {/* Status bar */}
       <div className="h-6 px-4 bg-space-dark border-t border-space-grid flex items-center justify-between text-xs text-gray-400">
         <div>
-          Tracking {satellites.length} objects | {conjunctions.length} potential conjunctions
+          Tracking {satellites.length} objects | {conjunctions.length} potential conjunctions | Threshold: {dangerThreshold.toFixed(1)}km
         </div>
         <div>
           Simulation time: {simulationTime === 0 ? 'Current' : `+${simulationTime}h`} | Data refresh: 60s
