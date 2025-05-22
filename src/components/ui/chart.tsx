@@ -1,3 +1,4 @@
+
 import * as React from "react"
 import * as RechartsPrimitive from "recharts"
 
@@ -352,6 +353,192 @@ function getPayloadConfigFromPayload(
     ? config[configLabelKey]
     : config[key as keyof typeof config]
 }
+
+// Add the missing chart components
+// AreaChart component
+interface AreaChartProps {
+  data: Array<Record<string, any>>;
+  index: string;
+  categories: string[];
+  colors?: string[];
+  valueFormatter?: (value: number) => string;
+  yAxisWidth?: number;
+}
+
+export const AreaChart = ({
+  data,
+  index,
+  categories,
+  colors = ["#2563eb", "#4ade80", "#f97316"],
+  valueFormatter = (value: number) => value.toString(),
+  yAxisWidth = 40,
+}: AreaChartProps) => {
+  return (
+    <ChartContainer
+      config={{}}
+      className="w-full h-full"
+    >
+      <RechartsPrimitive.ComposedChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <RechartsPrimitive.CartesianGrid strokeDasharray="3 3" vertical={false} />
+        <RechartsPrimitive.XAxis
+          dataKey={index}
+          fontSize={12}
+          axisLine={false}
+          tickLine={false}
+          tickMargin={8}
+          stroke="#1F2937"
+        />
+        <RechartsPrimitive.YAxis
+          width={yAxisWidth}
+          fontSize={12}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={valueFormatter}
+          tickMargin={8}
+          stroke="#1F2937"
+        />
+        <RechartsPrimitive.Tooltip
+          content={(props) => (
+            <ChartTooltipContent
+              {...props}
+              formatter={(value, name) => {
+                return [valueFormatter(Number(value)), name];
+              }}
+            />
+          )}
+        />
+        {categories.map((category, i) => (
+          <RechartsPrimitive.Area
+            key={category}
+            type="monotone"
+            dataKey={category}
+            stroke={colors[i % colors.length]}
+            fill={colors[i % colors.length]}
+            fillOpacity={0.3}
+            activeDot={{ r: 4 }}
+          />
+        ))}
+      </RechartsPrimitive.ComposedChart>
+    </ChartContainer>
+  );
+};
+
+// BarChart component
+interface BarChartProps {
+  data: Array<Record<string, any>>;
+  index: string;
+  categories: string[];
+  colors?: string[];
+  valueFormatter?: (value: number) => string;
+  yAxisWidth?: number;
+}
+
+export const BarChart = ({
+  data,
+  index,
+  categories,
+  colors = ["#2563eb", "#4ade80", "#f97316"],
+  valueFormatter = (value: number) => value.toString(),
+  yAxisWidth = 40,
+}: BarChartProps) => {
+  return (
+    <ChartContainer
+      config={{}}
+      className="w-full h-full"
+    >
+      <RechartsPrimitive.BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <RechartsPrimitive.CartesianGrid strokeDasharray="3 3" vertical={false} />
+        <RechartsPrimitive.XAxis
+          dataKey={index}
+          fontSize={12}
+          axisLine={false}
+          tickLine={false}
+          tickMargin={8}
+          stroke="#1F2937"
+        />
+        <RechartsPrimitive.YAxis
+          width={yAxisWidth}
+          fontSize={12}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={valueFormatter}
+          tickMargin={8}
+          stroke="#1F2937"
+        />
+        <RechartsPrimitive.Tooltip
+          content={(props) => (
+            <ChartTooltipContent
+              {...props}
+              formatter={(value, name) => {
+                return [valueFormatter(Number(value)), name];
+              }}
+            />
+          )}
+        />
+        {categories.map((category, i) => (
+          <RechartsPrimitive.Bar
+            key={category}
+            dataKey={category}
+            fill={colors[i % colors.length]}
+          />
+        ))}
+      </RechartsPrimitive.BarChart>
+    </ChartContainer>
+  );
+};
+
+// PieChart component
+interface PieChartProps {
+  data: Array<Record<string, any>>;
+  index: string;
+  categories: string[];
+  colors?: string[];
+  valueFormatter?: (value: number) => string;
+}
+
+export const PieChart = ({
+  data,
+  index,
+  categories,
+  colors = ["#2563eb", "#4ade80", "#f97316", "#8B5CF6"],
+  valueFormatter = (value: number) => value.toString(),
+}: PieChartProps) => {
+  return (
+    <ChartContainer
+      config={{}}
+      className="w-full h-full"
+    >
+      <RechartsPrimitive.PieChart margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+        <RechartsPrimitive.Tooltip
+          content={(props) => (
+            <ChartTooltipContent
+              {...props}
+              formatter={(value, name) => {
+                return [valueFormatter(Number(value)), name];
+              }}
+            />
+          )}
+        />
+        <RechartsPrimitive.Pie
+          data={data}
+          dataKey={categories[0]}
+          nameKey={index}
+          cx="50%"
+          cy="50%"
+          outerRadius={60}
+          fill="#8884d8"
+        >
+          {data.map((entry, i) => (
+            <RechartsPrimitive.Cell 
+              key={`cell-${i}`} 
+              fill={colors[i % colors.length]} 
+            />
+          ))}
+        </RechartsPrimitive.Pie>
+      </RechartsPrimitive.PieChart>
+    </ChartContainer>
+  );
+};
 
 export {
   ChartContainer,
