@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,6 +5,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertCircle, Calendar, Download, ExternalLink, Flag, Globe, Info } from 'lucide-react';
 import { SatelliteData, ConjunctionEvent } from '@/utils/satelliteData';
+import { useSatelliteDetails } from '@/hooks/useSatelliteDetails';
 import { cn } from '@/lib/utils';
 
 interface SatelliteDetailsProps {
@@ -19,6 +19,9 @@ const SatelliteDetails: React.FC<SatelliteDetailsProps> = ({
   conjunctions,
   className
 }) => {
+  // Fetch detailed satellite data using the new API
+  const { details, loading, error } = useSatelliteDetails(satellite?.id || null);
+  
   if (!satellite) {
     return (
       <Card className={cn("space-card text-center py-12", className)}>
@@ -32,22 +35,35 @@ const SatelliteDetails: React.FC<SatelliteDetailsProps> = ({
     );
   }
 
-  // Filter conjunctions for this satellite
+  // Use detailed data if available, fallback to satellite prop data
+  const displayData = details || satellite;
   const satelliteConjunctions = conjunctions.filter(
     (conj) => conj.primaryObject === satellite.id || conj.secondaryObject === satellite.id
   );
   
-  // Format TLE data for display
-  const formatTLE = (tleData?: string[]) => {
-    if (!tleData || tleData.length < 2) return 'No TLE data available';
+  const formatTLE = (tleData?: string[] | { line1: string; line2: string }) => {
+    if (!tleData) return 'No TLE data available';
     
-    return (
-      <div className="font-mono text-xs overflow-x-auto bg-space-darker p-2 rounded">
-        {tleData.map((line, index) => (
-          <div key={index} className="whitespace-nowrap">{line}</div>
-        ))}
-      </div>
-    );
+    if (Array.isArray(tleData) && tleData.length >= 2) {
+      return (
+        <div className="font-mono text-xs overflow-x-auto bg-space-darker p-2 rounded">
+          {tleData.map((line, index) => (
+            <div key={index} className="whitespace-nowrap">{line}</div>
+          ))}
+        </div>
+      );
+    }
+    
+    if (typeof tleData === 'object' && 'line1' in tleData && 'line2' in tleData) {
+      return (
+        <div className="font-mono text-xs overflow-x-auto bg-space-darker p-2 rounded">
+          <div className="whitespace-nowrap">{tleData.line1}</div>
+          <div className="whitespace-nowrap">{tleData.line2}</div>
+        </div>
+      );
+    }
+    
+    return 'No TLE data available';
   };
 
   return (
@@ -56,12 +72,12 @@ const SatelliteDetails: React.FC<SatelliteDetailsProps> = ({
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="text-white flex items-center">
-              {satellite.name}
-              {satellite.riskFactor && satellite.riskFactor >= 60 && (
+              {displayData.name}
+              {displayData.riskFactor && displayData.riskFactor >= 60 && (
                 <AlertCircle className="ml-2 h-4 w-4 text-space-accent-alt" />
               )}
             </CardTitle>
-            <p className="text-sm text-gray-400">{satellite.id}</p>
+            <p className="text-sm text-gray-400">{displayData.id}</p>
           </div>
           <Button
             variant="outline"
@@ -90,18 +106,31 @@ const SatelliteDetails: React.FC<SatelliteDetailsProps> = ({
         </div>
         
         <TabsContent value="info" className="px-6 py-4">
+          {loading && (
+            <div className="text-center py-4">
+              <div className="text-sm text-gray-400">Loading detailed information...</div>
+            </div>
+          )}
+          
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded p-3 mb-4">
+              <div className="text-sm text-red-400">Error loading details: {error}</div>
+              <div className="text-xs text-gray-400 mt-1">Using cached data</div>
+            </div>
+          )}
+          
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs text-gray-400 mb-1">Type</p>
-              <p className="text-sm text-white capitalize">{satellite.type}</p>
+              <p className="text-sm text-white capitalize">{displayData.type}</p>
             </div>
             
-            {satellite.launchDate && (
+            {(displayData.launchDate || satellite.launchDate) && (
               <div>
                 <p className="text-xs text-gray-400 mb-1">Launch Date</p>
                 <p className="text-sm text-white flex items-center">
                   <Calendar className="h-3 w-3 mr-1" />
-                  {satellite.launchDate}
+                  {displayData.launchDate || satellite.launchDate}
                 </p>
               </div>
             )}
@@ -116,16 +145,16 @@ const SatelliteDetails: React.FC<SatelliteDetailsProps> = ({
               </div>
             )}
             
-            {satellite.riskFactor !== undefined && (
+            {displayData.riskFactor !== undefined && (
               <div>
                 <p className="text-xs text-gray-400 mb-1">Risk Factor</p>
                 <p className={cn(
                   "text-sm flex items-center",
-                  satellite.riskFactor >= 60 ? "text-space-accent-alt" :
-                  satellite.riskFactor >= 30 ? "text-yellow-400" : "text-green-400"
+                  displayData.riskFactor >= 60 ? "text-space-accent-alt" :
+                  displayData.riskFactor >= 30 ? "text-yellow-400" : "text-green-400"
                 )}>
-                  {Math.round(satellite.riskFactor)}%
-                  {satellite.riskFactor >= 60 && (
+                  {Math.round(displayData.riskFactor)}%
+                  {displayData.riskFactor >= 60 && (
                     <AlertCircle className="ml-1 h-3 w-3" />
                   )}
                 </p>
@@ -138,7 +167,10 @@ const SatelliteDetails: React.FC<SatelliteDetailsProps> = ({
           <div>
             <p className="text-xs text-gray-400 mb-2">Last Updated</p>
             <p className="text-sm text-white">
-              {new Date(satellite.lastUpdated).toLocaleString()}
+              {displayData.lastUpdated ? 
+                new Date(displayData.lastUpdated).toLocaleString() :
+                new Date(satellite.lastUpdated).toLocaleString()
+              }
             </p>
           </div>
           
@@ -158,28 +190,36 @@ const SatelliteDetails: React.FC<SatelliteDetailsProps> = ({
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
               <p className="text-xs text-gray-400 mb-1">Orbit Type</p>
-              <p className="text-sm text-white">{satellite.orbitType}</p>
+              <p className="text-sm text-white">{displayData.orbitType || satellite.orbitType}</p>
             </div>
             
             <div>
               <p className="text-xs text-gray-400 mb-1">Altitude</p>
-              <p className="text-sm text-white">{Math.round(satellite.altitude)} km</p>
+              <p className="text-sm text-white">
+                {Math.round(
+                  details?.altitude_km || satellite.altitude
+                )} km
+              </p>
             </div>
             
             <div>
               <p className="text-xs text-gray-400 mb-1">Inclination</p>
-              <p className="text-sm text-white">{satellite.inclination.toFixed(2)}°</p>
+              <p className="text-sm text-white">
+                {(details?.inclination_deg || satellite.inclination).toFixed(2)}°
+              </p>
             </div>
             
             <div>
               <p className="text-xs text-gray-400 mb-1">Velocity</p>
-              <p className="text-sm text-white">{satellite.velocity.toFixed(2)} km/s</p>
+              <p className="text-sm text-white">
+                {(details?.velocity_km_s || satellite.velocity).toFixed(2)} km/s
+              </p>
             </div>
           </div>
           
           <div className="mt-4">
             <p className="text-xs text-gray-400 mb-2">TLE Data</p>
-            {formatTLE(satellite.tleData)}
+            {formatTLE(details?.tle || satellite.tleData)}
           </div>
           
           <div className="mt-4 flex justify-between">

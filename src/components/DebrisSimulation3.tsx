@@ -1,25 +1,11 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
-import axios from 'axios';
-
-interface OrbitalElements {
-  id: string;
-  name: string;
-  semiMajorAxis: number;
-  eccentricity: number;
-  inclination: number;
-  rightAscension: number;
-  argumentOfPerigee: number;
-  meanAnomaly: number;
-  meanMotion: number;
-  period: number;
-  epoch: number;
-  currentPosition: { x: number; y: number; z: number };
-  type: string;
-  orbitType: 'LEO' | 'MEO' | 'GEO' | 'HEO';
-  riskFactor: number;
-  noradId: number;
-}
+import { useSatelliteData } from '@/hooks/useSatelliteData';
+import { useSatellitePositions } from '@/hooks/useSatellitePositions';
+import ControlsOverlay from '@/components/simulation/ControlsOverlay';
+import StatusOverlay from '@/components/simulation/StatusOverlay';
+import SatelliteTooltip from '@/components/simulation/SatelliteTooltip';
 
 interface SatellitePosition {
   id: string;
@@ -41,7 +27,7 @@ interface DebrisSimulation3Props {
   filteredSatelliteId?: string | null;
   className?: string;
   apiEndpoint?: string;
-  satellites?: any[]; // Pass satellites from parent to ensure sync
+  satellites?: any[];
 }
 
 const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
@@ -62,151 +48,11 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
   const zoom = useRef(1);
   const [hoveredSatellite, setHoveredSatellite] = useState<SatellitePosition | null>(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
-  const [satellites, setSatellites] = useState<SatellitePosition[]>([]);
-  const [orbitalElements, setOrbitalElements] = useState<OrbitalElements[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const [showGridlines, setShowGridlines] = useState(true);
-  const startTime = useRef(Date.now());
 
-  // Use passed satellites or fetch independently
-  useEffect(() => {
-    if (propSatellites && propSatellites.length > 0) {
-      console.log('Using satellites from props:', propSatellites.length);
-      setOrbitalElements(propSatellites);
-      setError(null);
-    } else {
-      // Fallback to independent fetching
-      const fetchOrbitalElements = async () => {
-        try {
-          console.log('Fetching orbital elements from:', apiEndpoint);
-          const response = await axios.get(apiEndpoint);
-          console.log('Received data:', response.data);
-          
-          if (!response.data || !Array.isArray(response.data)) {
-            throw new Error('Invalid data format received from backend');
-          }
-          
-          setOrbitalElements(response.data);
-          setError(null);
-          console.log('Successfully loaded', response.data.length, 'orbital elements');
-        } catch (error) {
-          console.error('Error fetching orbital elements:', error);
-          setError(error instanceof Error ? error.message : 'Failed to fetch data');
-        }
-      };
-
-      fetchOrbitalElements();
-      const interval = setInterval(fetchOrbitalElements, 60000);
-      return () => clearInterval(interval);
-    }
-  }, [apiEndpoint, propSatellites]);
-
-  // Simplified orbital mechanics calculation
-  const calculatePosition = (elements: OrbitalElements, timeOffsetSeconds: number): { x: number; y: number; z: number; altitude: number } => {
-    try {
-      const { semiMajorAxis, eccentricity, inclination, rightAscension, argumentOfPerigee, meanAnomaly, meanMotion } = elements;
-      
-      // Use current position if available and time offset is small
-      if (timeOffsetSeconds < 10 && elements.currentPosition) {
-        const { x, y, z } = elements.currentPosition;
-        const altitude = Math.sqrt(x * x + y * y + z * z) - 6371;
-        return { x, y, z, altitude };
-      }
-      
-      // Calculate current mean anomaly
-      const currentMeanAnomaly = meanAnomaly + meanMotion * timeOffsetSeconds;
-      
-      // Solve Kepler's equation for eccentric anomaly (simplified Newton-Raphson)
-      let eccentricAnomaly = currentMeanAnomaly;
-      for (let i = 0; i < 8; i++) {
-        const f = eccentricAnomaly - eccentricity * Math.sin(eccentricAnomaly) - currentMeanAnomaly;
-        const df = 1 - eccentricity * Math.cos(eccentricAnomaly);
-        eccentricAnomaly = eccentricAnomaly - f / df;
-      }
-      
-      // True anomaly
-      const trueAnomaly = 2 * Math.atan2(
-        Math.sqrt(1 + eccentricity) * Math.sin(eccentricAnomaly / 2),
-        Math.sqrt(1 - eccentricity) * Math.cos(eccentricAnomaly / 2)
-      );
-      
-      // Distance from Earth center
-      const radius = semiMajorAxis * (1 - eccentricity * Math.cos(eccentricAnomaly));
-      
-      // Position in orbital plane
-      const xOrbital = radius * Math.cos(trueAnomaly);
-      const yOrbital = radius * Math.sin(trueAnomaly);
-      
-      // Transform to Earth-centered coordinates
-      const cosI = Math.cos(inclination);
-      const sinI = Math.sin(inclination);
-      const cosO = Math.cos(rightAscension);
-      const sinO = Math.sin(rightAscension);
-      const cosW = Math.cos(argumentOfPerigee);
-      const sinW = Math.sin(argumentOfPerigee);
-      
-      // Rotation matrix
-      const r11 = cosO * cosW - sinO * sinW * cosI;
-      const r12 = -cosO * sinW - sinO * cosW * cosI;
-      const r21 = sinO * cosW + cosO * sinW * cosI;
-      const r22 = -sinO * sinW + cosO * cosW * cosI;
-      const r31 = sinW * sinI;
-      const r32 = cosW * sinI;
-      
-      const x = r11 * xOrbital + r12 * yOrbital;
-      const y = r21 * xOrbital + r22 * yOrbital;
-      const z = r31 * xOrbital + r32 * yOrbital;
-      
-      const altitude = Math.sqrt(x * x + y * y + z * z) - 6371;
-      
-      return { x, y, z, altitude };
-    } catch (error) {
-      console.error('Error calculating position for satellite:', elements.name, error);
-      // Fallback to current position
-      if (elements.currentPosition) {
-        const { x, y, z } = elements.currentPosition;
-        const altitude = Math.sqrt(x * x + y * y + z * z) - 6371;
-        return { x, y, z, altitude };
-      }
-      return { x: 0, y: 0, z: 0, altitude: 0 };
-    }
-  };
-
-  // Update satellite positions
-  useEffect(() => {
-    if (orbitalElements.length === 0) return;
-
-    const updatePositions = () => {
-      const currentTime = Date.now();
-      const timeOffset = (currentTime - startTime.current) / 1000; // seconds
-      
-      const updatedSatellites = orbitalElements.map(element => {
-        const position = calculatePosition(element, timeOffset);
-        
-        return {
-          id: element.id,
-          name: element.name,
-          x: position.x,
-          y: position.y,
-          z: position.z,
-          type: element.type,
-          orbitType: element.orbitType,
-          riskFactor: element.riskFactor,
-          inclination: element.inclination * 180 / Math.PI,
-          altitude: position.altitude
-        };
-      });
-      
-      setSatellites(updatedSatellites);
-      console.log('Updated positions for', updatedSatellites.length, 'satellites');
-    };
-
-    // Update immediately and then every 1 second
-    updatePositions();
-    const interval = setInterval(updatePositions, 1000);
-
-    return () => clearInterval(interval);
-  }, [orbitalElements]);
+  // Use custom hooks for data management
+  const { orbitalElements, error } = useSatelliteData(apiEndpoint, propSatellites);
+  const satellites = useSatellitePositions(orbitalElements);
 
   // Canvas drawing and interaction logic
   useEffect(() => {
@@ -216,7 +62,6 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
     const context = canvas.getContext('2d');
     if (!context) return;
 
-    // Set canvas dimensions
     const updateCanvasSize = () => {
       if (containerRef.current) {
         canvas.width = containerRef.current.clientWidth;
@@ -227,7 +72,6 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
     updateCanvasSize();
     window.addEventListener('resize', updateCanvasSize);
 
-    // Draw function
     const draw = () => {
       if (!context) return;
 
@@ -242,7 +86,6 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         context.strokeStyle = 'rgba(100, 100, 100, 0.3)';
         context.lineWidth = 1;
         
-        // Vertical gridlines
         for (let x = 0; x <= canvas.width; x += 50 * zoom.current) {
           context.beginPath();
           context.moveTo(x, 0);
@@ -250,7 +93,6 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
           context.stroke();
         }
         
-        // Horizontal gridlines
         for (let y = 0; y <= canvas.height; y += 50 * zoom.current) {
           context.beginPath();
           context.moveTo(0, y);
@@ -305,25 +147,19 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         context.stroke();
       }
 
-      // Reset hover state
       setHoveredSatellite(null);
       
-      // Filter satellites if needed
       const satellitesToDraw = filteredSatelliteId 
         ? satellites.filter(sat => sat.id === filteredSatelliteId)
         : satellites;
       
-      console.log('Drawing satellites:', satellitesToDraw.length, 'highlighted:', highlightedSatellite, 'filtered:', filteredSatelliteId);
-      
       // Draw satellites
       satellitesToDraw.forEach((sat) => {
-        // Project 3D position to 2D
         const scale = 0.02 * zoom.current;
         const x3d = sat.x * scale;
         const y3d = sat.y * scale;
         const z3d = sat.z * scale;
         
-        // Simple rotation
         const cosRotX = Math.cos(rotation.current.x * 0.01);
         const sinRotX = Math.sin(rotation.current.x * 0.01);
         const cosRotY = Math.cos(rotation.current.y * 0.01);
@@ -335,9 +171,8 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         const screenX = centerX + x2d;
         const screenY = centerY + y2d;
         
-        // Check if satellite is visible (in front)
         const z2d = x3d * sinRotY + z3d * cosRotY;
-        if (z2d < -1000) return; // Behind Earth, don't draw
+        if (z2d < -1000) return;
         
         const isSelected = selectedSatellite && selectedSatellite.id === sat.id;
         const isHighlighted = highlightedSatellite === sat.id;
@@ -345,7 +180,6 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         
         let size = sat.orbitType === 'LEO' ? 6 * zoom.current : 4 * zoom.current;
         
-        // Increase size for highlighted/filtered satellites
         if (isHighlighted || isFiltered) {
           size *= 1.5;
         }
@@ -355,7 +189,6 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
           context.strokeStyle = 'rgba(59, 130, 246, 0.5)';
           context.lineWidth = 2;
           context.beginPath();
-          // Simple trail effect - could be enhanced with orbital path calculation
           const trailLength = 30;
           for (let i = 0; i < trailLength; i++) {
             const trailAlpha = (trailLength - i) / trailLength;
@@ -376,11 +209,11 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         context.beginPath();
         
         if (isHighlighted || isFiltered) {
-          context.fillStyle = '#3b82f6'; // Blue for highlighted/filtered
+          context.fillStyle = '#3b82f6';
         } else if (sat.riskFactor > 60) {
-          context.fillStyle = '#ef4444'; // Red for high risk
+          context.fillStyle = '#ef4444';
         } else {
-          context.fillStyle = '#10b981'; // Green for normal
+          context.fillStyle = '#10b981';
         }
         
         if (isSelected) {
@@ -395,17 +228,14 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         context.fill();
         context.shadowBlur = 0;
         
-        // Store screen position for interaction
         (sat as any).screenPosition = { x: screenX, y: screenY, size };
         
-        // Draw label for selected, highlighted, or filtered satellite
         if (isSelected || isHighlighted || isFiltered) {
           context.font = '12px Arial';
           context.fillStyle = '#ffffff';
           context.textAlign = 'center';
           context.fillText(sat.name, screenX, screenY - 25);
           
-          // Draw additional info for highlighted satellites
           if (isHighlighted || isFiltered) {
             context.font = '10px Arial';
             context.fillText(`Alt: ${Math.round(sat.altitude)}km`, screenX, screenY - 10);
@@ -413,7 +243,6 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
           }
         }
         
-        // Check for hover
         if (lastMousePos.current) {
           const dx = screenX - lastMousePos.current.x;
           const dy = screenY - lastMousePos.current.y;
@@ -484,18 +313,15 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       zoom.current -= e.deltaY * 0.001;
-      // Extended zoom range
       zoom.current = Math.max(0.1, Math.min(zoom.current, 10.0));
     };
 
-    // Add event listeners
     canvas.addEventListener('click', handleCanvasClick);
     canvas.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
     canvas.addEventListener('wheel', handleWheel, { passive: false });
 
-    // Start animation
     animationRef.current = requestAnimationFrame(draw);
 
     return () => {
@@ -529,63 +355,25 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
       )}
       
       {hoveredSatellite && (
-        <div 
-          className="absolute z-20 bg-black/80 border border-gray-600 rounded-md p-2 text-xs text-white max-w-[200px] pointer-events-none"
-          style={{ 
-            left: mousePosition.x + 15, 
-            top: mousePosition.y - 15,
-            transform: 'translateY(-100%)'
-          }}
-        >
-          <div className="font-semibold">{hoveredSatellite.name}</div>
-          <div>ID: {hoveredSatellite.id}</div>
-          <div>Type: {hoveredSatellite.type}</div>
-          <div>Orbit: {hoveredSatellite.orbitType}</div>
-          <div>Altitude: {Math.round(hoveredSatellite.altitude)} km</div>
-          <div className={hoveredSatellite.riskFactor > 60 ? 'text-red-400' : 'text-green-400'}>
-            Risk: {Math.round(hoveredSatellite.riskFactor)}%
-          </div>
-        </div>
+        <SatelliteTooltip 
+          satellite={hoveredSatellite}
+          position={mousePosition}
+        />
       )}
       
-      {/* Enhanced control instructions */}
-      <div className="absolute top-4 right-4 bg-black/70 px-3 py-2 rounded text-xs text-white max-w-[250px]">
-        <div className="font-semibold mb-1">🚀 Simulation Controls:</div>
-        <div>🖱️ <strong>Left-click + drag:</strong> Rotate Earth view</div>
-        <div>🔄 <strong>Mouse wheel:</strong> Zoom in/out (0.1x - 10x)</div>
-        <div>👆 <strong>Click satellite:</strong> Select & view details</div>
-        <div>🔍 <strong>Search:</strong> Auto-highlight satellites</div>
-        <div>👁️ <strong>Filter button:</strong> Show single satellite</div>
-        {filteredSatelliteId && (
-          <div className="mt-1 text-blue-300 font-semibold">
-            📍 Currently showing filtered satellite
-          </div>
-        )}
-        {highlightedSatellite && !filteredSatelliteId && (
-          <div className="mt-1 text-yellow-300 font-semibold">
-            ⭐ Highlighted from search/selection
-          </div>
-        )}
-      </div>
+      <ControlsOverlay
+        filteredSatelliteId={filteredSatelliteId}
+        highlightedSatellite={highlightedSatellite}
+        showGridlines={showGridlines}
+        onToggleGridlines={() => setShowGridlines(!showGridlines)}
+      />
       
-      {/* Gridlines toggle */}
-      <div className="absolute top-4 left-4 bg-black/60 px-2 py-1 rounded text-xs text-white">
-        <button 
-          onClick={() => setShowGridlines(!showGridlines)}
-          className="hover:text-blue-300 transition-colors"
-        >
-          {showGridlines ? '🔲' : '⬜'} Grid: {showGridlines ? 'ON' : 'OFF'}
-        </button>
-      </div>
-      
-      <div className="absolute bottom-4 left-4 bg-black/70 px-2 py-1 rounded text-xs text-white">
-        <div>📡 Satellites: {filteredSatelliteId ? '1 (filtered)' : satellites.length}</div>
-        {highlightedSatellite && (
-          <div>⭐ Highlighted: {satellites.find(s => s.id === highlightedSatellite)?.name || highlightedSatellite}</div>
-        )}
-        <div>🔄 Live tracking: {satellites.length > 0 ? 'Active' : 'Loading...'}</div>
-        <div>🔍 Zoom: {zoom.current.toFixed(1)}x</div>
-      </div>
+      <StatusOverlay
+        satellites={satellites}
+        filteredSatelliteId={filteredSatelliteId}
+        highlightedSatellite={highlightedSatellite}
+        zoom={zoom.current}
+      />
     </div>
   );
 };
