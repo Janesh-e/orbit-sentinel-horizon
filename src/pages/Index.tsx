@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import Navbar from '@/components/Navbar';
 import DebrisSimulation from '@/components/DebrisSimulation';
@@ -85,7 +86,7 @@ const Index = () => {
       inclination: satellite.inclination,
       altitude: satellite.altitude || 0,
       velocity: 0,
-      launchDate: new Date(),
+      launchDate: new Date().toISOString(),
       owner: "Unknown",
       position: satellite.position || { x: 0, y: 0, z: 0 },
       riskFactor: satellite.riskFactor || 0
