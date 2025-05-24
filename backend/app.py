@@ -271,6 +271,81 @@ def get_live_positions():
     return jsonify(positions)
 
 
+@app.route('/api/satellite/<int:sat_id>')
+def get_satellite_details(sat_id):
+    output_file = 'cached_active.tle'
+    
+    try:
+        with open(output_file, 'r', encoding='utf-8') as f:
+            lines = f.read().strip().splitlines()
+            # Remove blank lines
+            lines = [line for line in lines if line.strip()]
+    except FileNotFoundError:
+        return jsonify({"error": "Cached TLE file not found."}), 500
+    
+    # Each satellite has 3 lines: name, line1, line2
+    total_sats = len(lines) // 3
+    if sat_id < 0 or sat_id >= total_sats:
+        return jsonify({"error": "Satellite ID out of range."}), 404
+    
+    idx = sat_id * 3
+    try:
+        name = lines[idx].strip()
+        line1 = lines[idx + 1].strip()
+        line2 = lines[idx + 2].strip()
+        
+        satellite = EarthSatellite(line1, line2, name, ts)
+        satrec = satellite.model
+        
+        # Orbital parameters
+        semi_major_axis = satrec.a * 6378.137  # km
+        eccentricity = satrec.ecco
+        inclination = math.degrees(satrec.inclo)  # convert radians to degrees
+        # Calculate current velocity magnitude (km/s)
+        now = ts.now()
+        geocentric = satellite.at(now)
+        velocity = geocentric.velocity.km_per_s
+        speed = math.sqrt(sum(v**2 for v in velocity))
+        
+        # Altitude approx (semi-major axis - Earth's radius)
+        altitude = semi_major_axis - 6371
+        
+        # Risk factor
+        risk_factor = calculate_collision_risk(*geocentric.position.km, semi_major_axis)
+        
+        # Orbit type
+        orbit_type = classify_orbit(altitude)
+        
+        # Launch date: TLE doesn't contain launch date; we can try to parse it from name if embedded,
+        # otherwise put None or a placeholder.
+        launch_date = None
+        
+        # Last updated time = TLE epoch time
+        # TLE epoch in Julian days since 1949 December 31 00:00 UT
+        # skyfield ts.tt is Terrestrial Time, get datetime from satellite.epoch
+        tle_epoch_dt = satellite.epoch.utc_datetime()
+        
+        # Compose response
+        result = {
+            "id": sat_id,
+            "name": name,
+            "type": "satellite",
+            "launchDate": launch_date,
+            "riskFactor": risk_factor,
+            "lastUpdated": tle_epoch_dt.isoformat(),
+            "orbitType": orbit_type,
+            "altitude_km": altitude,
+            "inclination_deg": inclination,
+            "velocity_km_s": speed,
+            "tle": {
+                "line1": line1,
+                "line2": line2
+            }
+        }
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": f"Error processing satellite: {e}"}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True)
