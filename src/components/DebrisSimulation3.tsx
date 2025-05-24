@@ -41,6 +41,7 @@ interface DebrisSimulation3Props {
   filteredSatelliteId?: string | null;
   className?: string;
   apiEndpoint?: string;
+  satellites?: any[]; // Pass satellites from parent to ensure sync
 }
 
 const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
@@ -49,7 +50,8 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
   highlightedSatellite,
   filteredSatelliteId,
   className,
-  apiEndpoint = 'http://localhost:5000/api/satellites/orbital-elements'
+  apiEndpoint = 'http://localhost:5000/api/satellites/orbital-elements',
+  satellites: propSatellites = []
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -66,33 +68,38 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
   const [showGridlines, setShowGridlines] = useState(true);
   const startTime = useRef(Date.now());
 
-  // Fetch orbital elements from backend
+  // Use passed satellites or fetch independently
   useEffect(() => {
-    const fetchOrbitalElements = async () => {
-      try {
-        console.log('Fetching orbital elements from:', apiEndpoint);
-        const response = await axios.get(apiEndpoint);
-        console.log('Received data:', response.data);
-        
-        if (!response.data || !Array.isArray(response.data)) {
-          throw new Error('Invalid data format received from backend');
+    if (propSatellites && propSatellites.length > 0) {
+      console.log('Using satellites from props:', propSatellites.length);
+      setOrbitalElements(propSatellites);
+      setError(null);
+    } else {
+      // Fallback to independent fetching
+      const fetchOrbitalElements = async () => {
+        try {
+          console.log('Fetching orbital elements from:', apiEndpoint);
+          const response = await axios.get(apiEndpoint);
+          console.log('Received data:', response.data);
+          
+          if (!response.data || !Array.isArray(response.data)) {
+            throw new Error('Invalid data format received from backend');
+          }
+          
+          setOrbitalElements(response.data);
+          setError(null);
+          console.log('Successfully loaded', response.data.length, 'orbital elements');
+        } catch (error) {
+          console.error('Error fetching orbital elements:', error);
+          setError(error instanceof Error ? error.message : 'Failed to fetch data');
         }
-        
-        setOrbitalElements(response.data);
-        setError(null);
-        console.log('Successfully loaded', response.data.length, 'orbital elements');
-      } catch (error) {
-        console.error('Error fetching orbital elements:', error);
-        setError(error instanceof Error ? error.message : 'Failed to fetch data');
-      }
-    };
+      };
 
-    fetchOrbitalElements();
-    
-    // Refresh data every 60 seconds
-    const interval = setInterval(fetchOrbitalElements, 60000);
-    return () => clearInterval(interval);
-  }, [apiEndpoint]);
+      fetchOrbitalElements();
+      const interval = setInterval(fetchOrbitalElements, 60000);
+      return () => clearInterval(interval);
+    }
+  }, [apiEndpoint, propSatellites]);
 
   // Simplified orbital mechanics calculation
   const calculatePosition = (elements: OrbitalElements, timeOffsetSeconds: number): { x: number; y: number; z: number; altitude: number } => {
@@ -306,6 +313,8 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         ? satellites.filter(sat => sat.id === filteredSatelliteId)
         : satellites;
       
+      console.log('Drawing satellites:', satellitesToDraw.length, 'highlighted:', highlightedSatellite, 'filtered:', filteredSatelliteId);
+      
       // Draw satellites
       satellitesToDraw.forEach((sat) => {
         // Project 3D position to 2D
@@ -332,16 +341,17 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         
         const isSelected = selectedSatellite && selectedSatellite.id === sat.id;
         const isHighlighted = highlightedSatellite === sat.id;
+        const isFiltered = filteredSatelliteId === sat.id;
         
         let size = sat.orbitType === 'LEO' ? 6 * zoom.current : 4 * zoom.current;
         
-        // Increase size for highlighted satellites
-        if (isHighlighted) {
+        // Increase size for highlighted/filtered satellites
+        if (isHighlighted || isFiltered) {
           size *= 1.5;
         }
         
         // Draw satellite trail for highlighted satellites
-        if (isHighlighted) {
+        if (isHighlighted || isFiltered) {
           context.strokeStyle = 'rgba(59, 130, 246, 0.5)';
           context.lineWidth = 2;
           context.beginPath();
@@ -365,8 +375,8 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         // Draw satellite
         context.beginPath();
         
-        if (isHighlighted) {
-          context.fillStyle = '#3b82f6'; // Blue for highlighted
+        if (isHighlighted || isFiltered) {
+          context.fillStyle = '#3b82f6'; // Blue for highlighted/filtered
         } else if (sat.riskFactor > 60) {
           context.fillStyle = '#ef4444'; // Red for high risk
         } else {
@@ -388,17 +398,18 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         // Store screen position for interaction
         (sat as any).screenPosition = { x: screenX, y: screenY, size };
         
-        // Draw label for selected or highlighted satellite
-        if (isSelected || isHighlighted) {
+        // Draw label for selected, highlighted, or filtered satellite
+        if (isSelected || isHighlighted || isFiltered) {
           context.font = '12px Arial';
           context.fillStyle = '#ffffff';
           context.textAlign = 'center';
           context.fillText(sat.name, screenX, screenY - 25);
           
           // Draw additional info for highlighted satellites
-          if (isHighlighted) {
+          if (isHighlighted || isFiltered) {
             context.font = '10px Arial';
             context.fillText(`Alt: ${Math.round(sat.altitude)}km`, screenX, screenY - 10);
+            context.fillText(`ID: ${sat.id}`, screenX, screenY + 25);
           }
         }
         
@@ -437,6 +448,7 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
           );
           
           if (distance < screenPos.size + 5) {
+            console.log('Clicked on satellite in simulation:', sat.id, sat.name);
             onSelectSatellite(sat);
             return;
           }
@@ -472,7 +484,8 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       zoom.current -= e.deltaY * 0.001;
-      zoom.current = Math.max(0.3, Math.min(zoom.current, 3.0));
+      // Extended zoom range
+      zoom.current = Math.max(0.1, Math.min(zoom.current, 10.0));
     };
 
     // Add event listeners
@@ -525,6 +538,7 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
           }}
         >
           <div className="font-semibold">{hoveredSatellite.name}</div>
+          <div>ID: {hoveredSatellite.id}</div>
           <div>Type: {hoveredSatellite.type}</div>
           <div>Orbit: {hoveredSatellite.orbitType}</div>
           <div>Altitude: {Math.round(hoveredSatellite.altitude)} km</div>
@@ -535,15 +549,21 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
       )}
       
       {/* Enhanced control instructions */}
-      <div className="absolute top-4 right-4 bg-black/60 px-3 py-2 rounded text-xs text-white max-w-[200px]">
-        <div className="font-semibold mb-1">Simulation Controls:</div>
-        <div>🖱️ Left-click + drag: Rotate view</div>
-        <div>🔄 Mouse wheel: Zoom in/out</div>
-        <div>👆 Click satellite: Select</div>
-        <div>🔍 Use search to highlight</div>
+      <div className="absolute top-4 right-4 bg-black/70 px-3 py-2 rounded text-xs text-white max-w-[250px]">
+        <div className="font-semibold mb-1">🚀 Simulation Controls:</div>
+        <div>🖱️ <strong>Left-click + drag:</strong> Rotate Earth view</div>
+        <div>🔄 <strong>Mouse wheel:</strong> Zoom in/out (0.1x - 10x)</div>
+        <div>👆 <strong>Click satellite:</strong> Select & view details</div>
+        <div>🔍 <strong>Search:</strong> Auto-highlight satellites</div>
+        <div>👁️ <strong>Filter button:</strong> Show single satellite</div>
         {filteredSatelliteId && (
-          <div className="mt-1 text-blue-300">
-            📍 Showing filtered satellite
+          <div className="mt-1 text-blue-300 font-semibold">
+            📍 Currently showing filtered satellite
+          </div>
+        )}
+        {highlightedSatellite && !filteredSatelliteId && (
+          <div className="mt-1 text-yellow-300 font-semibold">
+            ⭐ Highlighted from search/selection
           </div>
         )}
       </div>
@@ -558,10 +578,13 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         </button>
       </div>
       
-      <div className="absolute bottom-4 left-4 bg-black/60 px-2 py-1 rounded text-xs text-white">
-        Satellites: {filteredSatelliteId ? '1 (filtered)' : satellites.length} | 
-        {highlightedSatellite && ' Highlighted: 1 |'}
-        Live tracking: {satellites.length > 0 ? 'Active' : 'Loading...'}
+      <div className="absolute bottom-4 left-4 bg-black/70 px-2 py-1 rounded text-xs text-white">
+        <div>📡 Satellites: {filteredSatelliteId ? '1 (filtered)' : satellites.length}</div>
+        {highlightedSatellite && (
+          <div>⭐ Highlighted: {satellites.find(s => s.id === highlightedSatellite)?.name || highlightedSatellite}</div>
+        )}
+        <div>🔄 Live tracking: {satellites.length > 0 ? 'Active' : 'Loading...'}</div>
+        <div>🔍 Zoom: {zoom.current.toFixed(1)}x</div>
       </div>
     </div>
   );
