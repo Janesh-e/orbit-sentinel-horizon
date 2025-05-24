@@ -6,9 +6,33 @@ from datetime import datetime
 import time
 import math
 
+from celery import Celery
+from celery.schedules import crontab
+
+def make_celery(app):
+    celery = Celery(
+        app.import_name,
+        backend='redis://localhost:6379/0',  # Redis backend
+        broker='redis://localhost:6379/0'    # Redis broker
+    )
+    celery.conf.update(app.config)
+    return celery
+
 app = Flask(__name__)
+celery = make_celery(app)
 CORS(app)
 ts = load.timescale()
+
+celery.conf.beat_schedule = {
+    'fetch-tle-every-6-hours': {
+        'task': 'tasks.fetch_tle',
+        'schedule': crontab(minute=0, hour='*/6'),  # every 6 hours
+    },
+}
+celery.conf.timezone = 'UTC'
+
+# celery -A app.celery worker --loglevel=info
+# celery -A app.celery beat --loglevel=info
 
 # Cache for satellite data
 satellite_cache = {
@@ -143,9 +167,12 @@ def calculate_collision_risk(x, y, z, semi_major_axis):
 @app.route('/api/satellites/orbital-elements')
 def get_orbital_elements():
     """Return orbital elements for real-time simulation"""
-    tle_url = 'https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle'
-    response = requests.get(tle_url)
-    lines = response.text.strip().splitlines()
+    output_file = 'cached_active.tle'
+    try:
+        with open(output_file, 'r') as f:
+            lines = f.read().strip().splitlines()
+    except FileNotFoundError:
+        return jsonify({"error": "Cached TLE file not found."}), 500
 
     orbital_data = []
     now = ts.now()
