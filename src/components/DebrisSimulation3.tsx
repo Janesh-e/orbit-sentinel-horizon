@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import axios from 'axios';
@@ -38,6 +37,8 @@ interface SatellitePosition {
 interface DebrisSimulation3Props {
   selectedSatellite: SatellitePosition | null;
   onSelectSatellite: (satellite: SatellitePosition) => void;
+  highlightedSatellite?: string | null;
+  filteredSatelliteId?: string | null;
   className?: string;
   apiEndpoint?: string;
 }
@@ -45,6 +46,8 @@ interface DebrisSimulation3Props {
 const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
   selectedSatellite,
   onSelectSatellite,
+  highlightedSatellite,
+  filteredSatelliteId,
   className,
   apiEndpoint = 'http://localhost:5000/api/satellites/orbital-elements'
 }) => {
@@ -60,6 +63,7 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
   const [satellites, setSatellites] = useState<SatellitePosition[]>([]);
   const [orbitalElements, setOrbitalElements] = useState<OrbitalElements[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [showGridlines, setShowGridlines] = useState(true);
   const startTime = useRef(Date.now());
 
   // Fetch orbital elements from backend
@@ -199,7 +203,7 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
 
   // Canvas drawing and interaction logic
   useEffect(() => {
-    if (!canvasRef.current || satellites.length === 0) return;
+    if (!canvasRef.current) return;
 
     const canvas = canvasRef.current;
     const context = canvas.getContext('2d');
@@ -225,6 +229,28 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
       const centerX = canvas.width / 2;
       const centerY = canvas.height / 2;
       const earthRadius = 40 * zoom.current;
+
+      // Draw gridlines if enabled
+      if (showGridlines) {
+        context.strokeStyle = 'rgba(100, 100, 100, 0.3)';
+        context.lineWidth = 1;
+        
+        // Vertical gridlines
+        for (let x = 0; x <= canvas.width; x += 50 * zoom.current) {
+          context.beginPath();
+          context.moveTo(x, 0);
+          context.lineTo(x, canvas.height);
+          context.stroke();
+        }
+        
+        // Horizontal gridlines
+        for (let y = 0; y <= canvas.height; y += 50 * zoom.current) {
+          context.beginPath();
+          context.moveTo(0, y);
+          context.lineTo(canvas.width, y);
+          context.stroke();
+        }
+      }
 
       // Draw orbital rings
       context.strokeStyle = 'rgba(59, 130, 246, 0.3)';
@@ -256,11 +282,32 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
       context.arc(centerX, centerY, earthRadius, 0, Math.PI * 2);
       context.stroke();
 
+      // Draw latitude lines on Earth
+      for (let lat = -60; lat <= 60; lat += 30) {
+        const y = (lat / 90) * earthRadius;
+        const width = Math.sqrt(earthRadius * earthRadius - y * y);
+        context.beginPath();
+        context.ellipse(centerX, centerY + y, width, width * 0.3, 0, 0, Math.PI * 2);
+        context.stroke();
+      }
+
+      // Draw longitude lines on Earth
+      for (let lng = 0; lng < 180; lng += 30) {
+        context.beginPath();
+        context.ellipse(centerX, centerY, earthRadius, earthRadius * 0.3, (lng * Math.PI) / 180, 0, Math.PI * 2);
+        context.stroke();
+      }
+
       // Reset hover state
       setHoveredSatellite(null);
       
+      // Filter satellites if needed
+      const satellitesToDraw = filteredSatelliteId 
+        ? satellites.filter(sat => sat.id === filteredSatelliteId)
+        : satellites;
+      
       // Draw satellites
-      satellites.forEach((sat) => {
+      satellitesToDraw.forEach((sat) => {
         // Project 3D position to 2D
         const scale = 0.02 * zoom.current;
         const x3d = sat.x * scale;
@@ -283,17 +330,53 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         const z2d = x3d * sinRotY + z3d * cosRotY;
         if (z2d < -1000) return; // Behind Earth, don't draw
         
-        const size = sat.orbitType === 'LEO' ? 6 * zoom.current : 4 * zoom.current;
         const isSelected = selectedSatellite && selectedSatellite.id === sat.id;
+        const isHighlighted = highlightedSatellite === sat.id;
+        
+        let size = sat.orbitType === 'LEO' ? 6 * zoom.current : 4 * zoom.current;
+        
+        // Increase size for highlighted satellites
+        if (isHighlighted) {
+          size *= 1.5;
+        }
+        
+        // Draw satellite trail for highlighted satellites
+        if (isHighlighted) {
+          context.strokeStyle = 'rgba(59, 130, 246, 0.5)';
+          context.lineWidth = 2;
+          context.beginPath();
+          // Simple trail effect - could be enhanced with orbital path calculation
+          const trailLength = 30;
+          for (let i = 0; i < trailLength; i++) {
+            const trailAlpha = (trailLength - i) / trailLength;
+            context.globalAlpha = trailAlpha * 0.5;
+            const trailX = screenX - (i * 2);
+            const trailY = screenY - (i * 1);
+            if (i === 0) {
+              context.moveTo(trailX, trailY);
+            } else {
+              context.lineTo(trailX, trailY);
+            }
+          }
+          context.stroke();
+          context.globalAlpha = 1;
+        }
         
         // Draw satellite
         context.beginPath();
-        context.fillStyle = sat.riskFactor > 60 ? '#ef4444' : '#10b981';
+        
+        if (isHighlighted) {
+          context.fillStyle = '#3b82f6'; // Blue for highlighted
+        } else if (sat.riskFactor > 60) {
+          context.fillStyle = '#ef4444'; // Red for high risk
+        } else {
+          context.fillStyle = '#10b981'; // Green for normal
+        }
         
         if (isSelected) {
           context.shadowColor = '#3b82f6';
           context.shadowBlur = 15;
-          context.arc(screenX, screenY, size * 1.5, 0, Math.PI * 2);
+          context.arc(screenX, screenY, size * 1.2, 0, Math.PI * 2);
         } else {
           context.shadowBlur = 0;
           context.arc(screenX, screenY, size, 0, Math.PI * 2);
@@ -305,12 +388,18 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         // Store screen position for interaction
         (sat as any).screenPosition = { x: screenX, y: screenY, size };
         
-        // Draw label for selected satellite
-        if (isSelected) {
+        // Draw label for selected or highlighted satellite
+        if (isSelected || isHighlighted) {
           context.font = '12px Arial';
           context.fillStyle = '#ffffff';
           context.textAlign = 'center';
-          context.fillText(sat.name, screenX, screenY - 20);
+          context.fillText(sat.name, screenX, screenY - 25);
+          
+          // Draw additional info for highlighted satellites
+          if (isHighlighted) {
+            context.font = '10px Arial';
+            context.fillText(`Alt: ${Math.round(sat.altitude)}km`, screenX, screenY - 10);
+          }
         }
         
         // Check for hover
@@ -335,7 +424,11 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       
-      for (const sat of satellites) {
+      const satellitesToCheck = filteredSatelliteId 
+        ? satellites.filter(sat => sat.id === filteredSatelliteId)
+        : satellites;
+      
+      for (const sat of satellitesToCheck) {
         const screenPos = (sat as any).screenPosition;
         if (screenPos) {
           const distance = Math.sqrt(
@@ -401,7 +494,7 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
       window.removeEventListener('mouseup', handleMouseUp);
       canvas.removeEventListener('wheel', handleWheel);
     };
-  }, [satellites, selectedSatellite, onSelectSatellite]);
+  }, [satellites, selectedSatellite, onSelectSatellite, highlightedSatellite, filteredSatelliteId, showGridlines]);
 
   return (
     <div 
@@ -441,8 +534,34 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         </div>
       )}
       
+      {/* Enhanced control instructions */}
+      <div className="absolute top-4 right-4 bg-black/60 px-3 py-2 rounded text-xs text-white max-w-[200px]">
+        <div className="font-semibold mb-1">Simulation Controls:</div>
+        <div>🖱️ Left-click + drag: Rotate view</div>
+        <div>🔄 Mouse wheel: Zoom in/out</div>
+        <div>👆 Click satellite: Select</div>
+        <div>🔍 Use search to highlight</div>
+        {filteredSatelliteId && (
+          <div className="mt-1 text-blue-300">
+            📍 Showing filtered satellite
+          </div>
+        )}
+      </div>
+      
+      {/* Gridlines toggle */}
+      <div className="absolute top-4 left-4 bg-black/60 px-2 py-1 rounded text-xs text-white">
+        <button 
+          onClick={() => setShowGridlines(!showGridlines)}
+          className="hover:text-blue-300 transition-colors"
+        >
+          {showGridlines ? '🔲' : '⬜'} Grid: {showGridlines ? 'ON' : 'OFF'}
+        </button>
+      </div>
+      
       <div className="absolute bottom-4 left-4 bg-black/60 px-2 py-1 rounded text-xs text-white">
-        Satellites: {satellites.length} | Drag to rotate | Scroll to zoom
+        Satellites: {filteredSatelliteId ? '1 (filtered)' : satellites.length} | 
+        {highlightedSatellite && ' Highlighted: 1 |'}
+        Live tracking: {satellites.length > 0 ? 'Active' : 'Loading...'}
       </div>
     </div>
   );

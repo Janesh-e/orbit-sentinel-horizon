@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect } from 'react';
 import Navbar from '@/components/Navbar';
 import DebrisSimulation from '@/components/DebrisSimulation';
@@ -12,32 +10,55 @@ import AlertsLog, { Alert } from '@/components/AlertsLog';
 import DangerThresholdControl from '@/components/DangerThresholdControl';
 import { SatelliteData, ConjunctionEvent, generateInitialData, satelliteStats } from '@/utils/satelliteData';
 import { Switch } from '@/components/ui/switch';
+import axios from 'axios';
 
 const Index = () => {
   const [showSidebar, setShowSidebar] = useState(true);
   const [satellites, setSatellites] = useState<SatelliteData[]>([]);
+  const [flaskSatellites, setFlaskSatellites] = useState<any[]>([]);
   const [conjunctions, setConjunctions] = useState<ConjunctionEvent[]>([]);
   const [selectedSatellite, setSelectedSatellite] = useState<SatelliteData | null>(null);
-  const [simulationTime, setSimulationTime] = useState(0); // hours ahead of current time
-  const [dangerThreshold, setDangerThreshold] = useState(5.0); // in kilometers
+  const [simulationTime, setSimulationTime] = useState(0);
+  const [dangerThreshold, setDangerThreshold] = useState(5.0);
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [useFlaskData, setUseFlaskData] = useState(false); // Toggle between dummy data and Flask API
+  const [useFlaskData, setUseFlaskData] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [highlightedSatellite, setHighlightedSatellite] = useState<string | null>(null);
 
-  // Initialize data
+  // Fetch Flask data
   useEffect(() => {
-    const { satellites, conjunctions } = generateInitialData();
-    setSatellites(satellites);
-    setConjunctions(conjunctions);
-    
-    // Generate initial alerts from conjunctions
-    const initialAlerts = generateAlertsFromConjunctions(conjunctions);
-    setAlerts(initialAlerts);
-  }, []);
-  
+    if (useFlaskData) {
+      const fetchFlaskData = async () => {
+        try {
+          const response = await axios.get('http://localhost:5000/api/satellites/orbital-elements');
+          setFlaskSatellites(response.data);
+        } catch (error) {
+          console.error('Error fetching Flask data:', error);
+        }
+      };
+
+      fetchFlaskData();
+      const interval = setInterval(fetchFlaskData, 60000);
+      return () => clearInterval(interval);
+    }
+  }, [useFlaskData]);
+
+  // Initialize dummy data
+  useEffect(() => {
+    if (!useFlaskData) {
+      const { satellites, conjunctions } = generateInitialData();
+      setSatellites(satellites);
+      setConjunctions(conjunctions);
+      
+      const initialAlerts = generateAlertsFromConjunctions(conjunctions);
+      setAlerts(initialAlerts);
+    }
+  }, [useFlaskData]);
+
   // Generate alerts from conjunctions
   const generateAlertsFromConjunctions = (conjs: ConjunctionEvent[]): Alert[] => {
     return conjs
-      .filter(conj => conj.distance < dangerThreshold) // Only conjunctions below threshold
+      .filter(conj => conj.distance < dangerThreshold)
       .map(conj => {
         const alertType = getAlertTypeFromDistance(conj.distance);
         return {
@@ -50,9 +71,9 @@ const Index = () => {
         };
       })
       .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-      .slice(0, 20); // Limit to 20 most recent alerts
+      .slice(0, 20);
   };
-  
+
   // Get alert type based on distance
   const getAlertTypeFromDistance = (distance: number): Alert['type'] => {
     if (distance < 2) return 'danger';
@@ -60,11 +81,11 @@ const Index = () => {
     return 'info';
   };
 
-  // Handle satellite selection
+  // Handle satellite selection from dummy data
   const handleSelectSatellite = (satellite: SatelliteData) => {
     setSelectedSatellite(satellite);
+    setHighlightedSatellite(satellite.id);
     
-    // Add an info alert when selecting a satellite
     const newAlert: Alert = {
       id: `select-${Date.now()}`,
       timestamp: new Date(),
@@ -76,15 +97,14 @@ const Index = () => {
     setAlerts(prev => [newAlert, ...prev].slice(0, 50));
   };
 
-  // Handle selection from Flask data
+  // Handle satellite selection from Flask data
   const handleSelectFlaskSatellite = (satellite: any) => {
-    // Convert Flask satellite data to match SatelliteData type
     const convertedSatellite: SatelliteData = {
       id: satellite.id,
       name: satellite.name,
       type: satellite.type,
       orbitType: satellite.orbitType,
-      inclination: satellite.inclination,
+      inclination: satellite.inclination * 180 / Math.PI,
       altitude: satellite.altitude || 0,
       velocity: 0,
       launchDate: new Date().toISOString(),
@@ -96,8 +116,8 @@ const Index = () => {
     };
     
     setSelectedSatellite(convertedSatellite);
+    setHighlightedSatellite(satellite.id);
     
-    // Add an info alert when selecting a satellite
     const newAlert: Alert = {
       id: `select-${Date.now()}`,
       timestamp: new Date(),
@@ -109,11 +129,39 @@ const Index = () => {
     setAlerts(prev => [newAlert, ...prev].slice(0, 50));
   };
 
+  // Handle search functionality
+  const handleSearch = (term: string) => {
+    setSearchTerm(term);
+    if (term && useFlaskData) {
+      const foundSatellite = flaskSatellites.find(sat => 
+        sat.name.toLowerCase().includes(term.toLowerCase()) || 
+        sat.id.toLowerCase().includes(term.toLowerCase())
+      );
+      if (foundSatellite) {
+        setHighlightedSatellite(foundSatellite.id);
+      }
+    } else if (term && !useFlaskData) {
+      const foundSatellite = satellites.find(sat => 
+        sat.name.toLowerCase().includes(term.toLowerCase()) || 
+        sat.id.toLowerCase().includes(term.toLowerCase())
+      );
+      if (foundSatellite) {
+        setHighlightedSatellite(foundSatellite.id);
+      }
+    } else {
+      setHighlightedSatellite(null);
+    }
+  };
+
+  // Filter satellite for simulation
+  const handleFilterSatellite = (satelliteId: string) => {
+    setHighlightedSatellite(highlightedSatellite === satelliteId ? null : satelliteId);
+  };
+
   // Handle time change in simulation
   const handleTimeChange = (hours: number) => {
     setSimulationTime(hours);
     
-    // Add a success alert when changing simulation time
     if (hours !== 0) {
       const newAlert: Alert = {
         id: `time-${Date.now()}`,
@@ -131,10 +179,8 @@ const Index = () => {
   const handleThresholdChange = (value: number) => {
     setDangerThreshold(value);
     
-    // Regenerate alerts based on new threshold
     const updatedAlerts = generateAlertsFromConjunctions(conjunctions);
     
-    // Add an info alert about the threshold change
     const thresholdAlert: Alert = {
       id: `threshold-${Date.now()}`,
       timestamp: new Date(),
@@ -155,8 +201,9 @@ const Index = () => {
   const toggleDataSource = () => {
     const newValue = !useFlaskData;
     setUseFlaskData(newValue);
+    setHighlightedSatellite(null);
+    setSearchTerm('');
     
-    // Add an info alert about the data source change
     const dataSourceAlert: Alert = {
       id: `data-source-${Date.now()}`,
       timestamp: new Date(),
@@ -173,23 +220,24 @@ const Index = () => {
       <Navbar toggleSidebar={toggleSidebar} />
       
       <div className="flex-1 flex overflow-hidden">
-        {/* Left sidebar */}
         {showSidebar && (
           <div className="w-80 border-r border-space-grid bg-space-dark overflow-y-auto flex-shrink-0">
             <div className="p-4">
               <SatelliteList
-                satellites={satellites}
+                satellites={useFlaskData ? flaskSatellites : satellites}
                 selectedSatellite={selectedSatellite}
-                onSelectSatellite={handleSelectSatellite}
+                onSelectSatellite={useFlaskData ? handleSelectFlaskSatellite : handleSelectSatellite}
+                onSearch={handleSearch}
+                onFilterSatellite={handleFilterSatellite}
+                highlightedSatellite={highlightedSatellite}
+                isFlaskData={useFlaskData}
               />
             </div>
           </div>
         )}
         
-        {/* Main content */}
         <div className="flex-1 overflow-y-auto">
           <div className="p-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Data source switch */}
             <div className="lg:col-span-2 flex items-center justify-end space-x-2 mb-2">
               <span className="text-xs text-gray-400">Local Data</span>
               <Switch 
@@ -199,12 +247,13 @@ const Index = () => {
               <span className="text-xs text-space-accent">Flask API</span>
             </div>
             
-            {/* Main visualization */}
             <div className="lg:col-span-2 space-card h-[500px]">
               {useFlaskData ? (
                 <DebrisSimulation3
                   selectedSatellite={selectedSatellite as any}
                   onSelectSatellite={handleSelectFlaskSatellite}
+                  highlightedSatellite={highlightedSatellite}
+                  filteredSatelliteId={highlightedSatellite}
                   className="h-full"
                   apiEndpoint="http://localhost:5000/api/satellites/orbital-elements"
                 />
@@ -218,7 +267,6 @@ const Index = () => {
               )}
             </div>
             
-            {/* Satellite Details & Time Controls */}
             <div className="flex flex-col space-y-4">
               <SatelliteDetails
                 satellite={selectedSatellite}
@@ -235,12 +283,10 @@ const Index = () => {
               />
             </div>
             
-            {/* Alert Log */}
             <div className="lg:col-span-3">
               <AlertsLog alerts={alerts} />
             </div>
             
-            {/* Statistics Panel */}
             <div className="lg:col-span-3">
               <StatisticsPanel stats={satelliteStats} />
             </div>
@@ -248,10 +294,9 @@ const Index = () => {
         </div>
       </div>
       
-      {/* Status bar */}
       <div className="h-6 px-4 bg-space-dark border-t border-space-grid flex items-center justify-between text-xs text-gray-400">
         <div>
-          Tracking {satellites.length} objects | {conjunctions.length} potential conjunctions | Threshold: {dangerThreshold.toFixed(1)}km
+          Tracking {useFlaskData ? flaskSatellites.length : satellites.length} objects | {conjunctions.length} potential conjunctions | Threshold: {dangerThreshold.toFixed(1)}km
         </div>
         <div>
           Simulation time: {simulationTime === 0 ? 'Current' : `+${simulationTime}h`} | 

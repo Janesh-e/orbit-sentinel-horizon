@@ -16,14 +16,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Satellite, Filter, ChevronDown, AlertTriangle } from 'lucide-react';
+import { Satellite, Filter, ChevronDown, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 import { SatelliteData } from '@/utils/satelliteData';
 import { cn } from '@/lib/utils';
 
 interface SatelliteListProps {
-  satellites: SatelliteData[];
-  onSelectSatellite: (satellite: SatelliteData) => void;
+  satellites: any[];
+  onSelectSatellite: (satellite: any) => void;
   selectedSatellite: SatelliteData | null;
+  onSearch?: (term: string) => void;
+  onFilterSatellite?: (satelliteId: string) => void;
+  highlightedSatellite?: string | null;
+  isFlaskData?: boolean;
   className?: string;
 }
 
@@ -31,12 +35,21 @@ const SatelliteList: React.FC<SatelliteListProps> = ({
   satellites,
   onSelectSatellite,
   selectedSatellite,
+  onSearch,
+  onFilterSatellite,
+  highlightedSatellite,
+  isFlaskData = false,
   className
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [orbitFilter, setOrbitFilter] = useState<string | null>(null);
   const [riskFilter, setRiskFilter] = useState<string | null>(null);
+
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    onSearch?.(value);
+  };
 
   const filteredSatellites = useMemo(() => {
     return satellites.filter((sat) => {
@@ -61,13 +74,14 @@ const SatelliteList: React.FC<SatelliteListProps> = ({
 
       // Apply risk filter
       if (riskFilter) {
-        if (riskFilter === 'high' && sat.riskFactor && sat.riskFactor < 60) {
+        const riskFactor = sat.riskFactor || 0;
+        if (riskFilter === 'high' && riskFactor < 60) {
           return false;
         }
-        if (riskFilter === 'medium' && sat.riskFactor && (sat.riskFactor < 30 || sat.riskFactor >= 60)) {
+        if (riskFilter === 'medium' && (riskFactor < 30 || riskFactor >= 60)) {
           return false;
         }
-        if (riskFilter === 'low' && sat.riskFactor && sat.riskFactor >= 30) {
+        if (riskFilter === 'low' && riskFactor >= 30) {
           return false;
         }
       }
@@ -76,11 +90,26 @@ const SatelliteList: React.FC<SatelliteListProps> = ({
     });
   }, [satellites, searchTerm, typeFilter, orbitFilter, riskFilter]);
 
+  const getSatelliteAltitude = (sat: any) => {
+    if (isFlaskData) {
+      // Calculate altitude from position if available
+      if (sat.currentPosition) {
+        const { x, y, z } = sat.currentPosition;
+        return Math.sqrt(x * x + y * y + z * z) - 6371;
+      }
+      // Calculate from semi-major axis
+      return sat.semiMajorAxis ? sat.semiMajorAxis - 6371 : 0;
+    }
+    return sat.altitude || 0;
+  };
+
   return (
     <div className={cn("space-card", className)}>
       <div className="p-4 border-b border-space-grid">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-white">Space Objects</h3>
+          <h3 className="text-lg font-semibold text-white">
+            {isFlaskData ? 'Live Satellites' : 'Space Objects'}
+          </h3>
           <div className="text-xs text-gray-400">
             {filteredSatellites.length} of {satellites.length} objects
           </div>
@@ -90,7 +119,7 @@ const SatelliteList: React.FC<SatelliteListProps> = ({
           <Input
             placeholder="Search by name or ID..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="bg-space-darker border-space-grid text-white"
           />
           
@@ -180,26 +209,30 @@ const SatelliteList: React.FC<SatelliteListProps> = ({
               <TableHead className="text-gray-400">Risk</TableHead>
               <TableHead className="text-gray-400 hidden md:table-cell">Type</TableHead>
               <TableHead className="text-gray-400 hidden md:table-cell">Altitude (km)</TableHead>
+              <TableHead className="text-gray-400 w-12">Filter</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredSatellites.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-gray-400 py-8">
+                <TableCell colSpan={7} className="text-center text-gray-400 py-8">
                   No space objects found matching your filters.
                 </TableCell>
               </TableRow>
             ) : (
               filteredSatellites.map((satellite) => {
                 const isSelected = selectedSatellite && selectedSatellite.id === satellite.id;
+                const isHighlighted = highlightedSatellite === satellite.id;
                 const isHighRisk = satellite.riskFactor && satellite.riskFactor >= 60;
+                const altitude = getSatelliteAltitude(satellite);
                 
                 return (
                   <TableRow
                     key={satellite.id}
                     className={cn(
                       "cursor-pointer border-space-grid",
-                      isSelected ? "bg-space-blue bg-opacity-20" : "hover:bg-space-dark hover:bg-opacity-70"
+                      isSelected ? "bg-space-blue bg-opacity-20" : "hover:bg-space-dark hover:bg-opacity-70",
+                      isHighlighted ? "bg-space-accent bg-opacity-10 border-space-accent" : ""
                     )}
                     onClick={() => onSelectSatellite(satellite)}
                   >
@@ -236,7 +269,23 @@ const SatelliteList: React.FC<SatelliteListProps> = ({
                       {satellite.type}
                     </TableCell>
                     <TableCell className="py-2 hidden md:table-cell">
-                      {Math.round(satellite.altitude)}
+                      {Math.round(altitude)}
+                    </TableCell>
+                    <TableCell className="py-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onFilterSatellite?.(satellite.id);
+                        }}
+                        className={cn(
+                          "h-6 w-6 p-0",
+                          isHighlighted ? "text-space-accent" : "text-gray-400"
+                        )}
+                      >
+                        {isHighlighted ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                      </Button>
                     </TableCell>
                   </TableRow>
                 );
