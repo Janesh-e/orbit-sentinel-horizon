@@ -169,8 +169,10 @@ def get_orbital_elements():
     """Return orbital elements for real-time simulation"""
     output_file = 'cached_active.tle'
     try:
-        with open(output_file, 'r') as f:
+        with open(output_file, 'r', encoding='utf-8') as f:
             lines = f.read().strip().splitlines()
+            lines = [line for line in lines if line.strip()]
+        print(f"Total cleaned lines: {len(lines)}")
     except FileNotFoundError:
         return jsonify({"error": "Cached TLE file not found."}), 500
 
@@ -178,6 +180,7 @@ def get_orbital_elements():
     now = ts.now()
 
     for i in range(0, len(lines), 3):
+        #print(repr(lines[i]), repr(lines[i+1]), repr(lines[i+2]))
         try:
             name = lines[i].strip()
             line1 = lines[i + 1].strip()
@@ -223,7 +226,7 @@ def get_orbital_elements():
                 "noradId": satrec.satnum
             })
         except Exception as e:
-            print(f"Error processing satellite {i//3}: {e}")
+            #print(f"Error processing satellite {i//3}: {e}")
             continue
 
     # Sort by orbit type and risk for better visualization

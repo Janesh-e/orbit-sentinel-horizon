@@ -10,7 +10,7 @@ def fetch_tle():
         response = requests.get(tle_url, timeout=10)
         response.raise_for_status()
         
-        with open(output_file, 'w') as f:
+        with open(output_file, 'w', encoding='utf-8') as f:
             f.write(response.text)
         
         print(f"[SUCCESS] TLE data saved to {output_file}")
