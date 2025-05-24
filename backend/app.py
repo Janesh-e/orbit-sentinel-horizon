@@ -73,7 +73,7 @@ def calculate_risk_factor(x, y, z):
         return min(70, max(10, 80 - altitude / 50))
     else:
         return max(5, 30 - altitude / 1000)
-
+'''
 def classify_orbit(position):
     from math import sqrt
     r = sqrt(sum(coord**2 for coord in position))
@@ -83,6 +83,16 @@ def classify_orbit(position):
         return "MEO"
     else:
         return "GEO"
+'''
+
+def classify_orbit(altitude):
+    if altitude < 2000:
+        return "LEO"
+    elif altitude < 35786:
+        return "MEO"
+    else:
+        return "GEO"
+
 
 # Add endpoint for real-time position updates (optional)
 @app.route('/api/satellites/positions')
