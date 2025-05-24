@@ -1,7 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import Navbar from '@/components/Navbar';
 import DebrisSimulation from '@/components/DebrisSimulation';
-import DebrisSimulation2 from '@/components/DebrisSimulation2';
 import DebrisSimulation3 from '@/components/DebrisSimulation3';
 import StatisticsPanel from '@/components/StatisticsPanel';
 import SatelliteList from '@/components/SatelliteList';
@@ -41,14 +41,14 @@ const Index = () => {
         const alertType = getAlertTypeFromDistance(conj.distance);
         return {
           id: `alert-${conj.id}`,
-          timestamp: new Date(conj.time),
+          timestamp: new Date(conj.time).toISOString(),
           type: alertType,
           message: `Potential collision detected between ${conj.primaryObject} and ${conj.secondaryObject}`,
           details: `Distance: ${conj.distance.toFixed(2)}km | Probability: ${(conj.probability * 100).toFixed(2)}% | Time to closest approach: ${conj.timeToClosestApproach}`,
           objectIds: [conj.primaryObject, conj.secondaryObject]
         };
       })
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, 20); // Limit to 20 most recent alerts
   };
   
@@ -66,7 +66,7 @@ const Index = () => {
     // Add an info alert when selecting a satellite
     const newAlert: Alert = {
       id: `select-${Date.now()}`,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       type: 'info',
       message: `Selected satellite: ${satellite.name}`,
       details: `Orbit: ${satellite.orbitType} | Inclination: ${satellite.inclination.toFixed(2)}° | Altitude: ${satellite.altitude.toFixed(2)}km`
@@ -97,7 +97,7 @@ const Index = () => {
     // Add an info alert when selecting a satellite
     const newAlert: Alert = {
       id: `select-${Date.now()}`,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       type: 'info',
       message: `Selected satellite: ${satellite.name}`,
       details: `Orbit: ${satellite.orbitType} | Inclination: ${satellite.inclination.toFixed(2)}°`
@@ -114,7 +114,7 @@ const Index = () => {
     if (hours !== 0) {
       const newAlert: Alert = {
         id: `time-${Date.now()}`,
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
         type: 'success',
         message: `Simulation time changed to +${hours}h`,
         details: 'Orbital positions updated based on predicted trajectories'
@@ -134,7 +134,7 @@ const Index = () => {
     // Add an info alert about the threshold change
     const thresholdAlert: Alert = {
       id: `threshold-${Date.now()}`,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       type: 'info',
       message: `Danger threshold updated to ${value.toFixed(1)} km`,
       details: `${updatedAlerts.filter(a => a.type === 'danger').length} critical alerts, ${updatedAlerts.filter(a => a.type === 'warning').length} warnings`
@@ -156,7 +156,7 @@ const Index = () => {
     // Add an info alert about the data source change
     const dataSourceAlert: Alert = {
       id: `data-source-${Date.now()}`,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       type: 'info',
       message: `Data source switched to ${newValue ? 'Flask API' : 'Local dummy data'}`,
       details: newValue ? 'Now using real-time data from Flask backend' : 'Using pre-generated sample data'
