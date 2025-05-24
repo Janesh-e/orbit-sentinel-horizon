@@ -1,8 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
 import Navbar from '@/components/Navbar';
 import DebrisSimulation from '@/components/DebrisSimulation';
 import DebrisSimulation2 from '@/components/DebrisSimulation2';
+import DebrisSimulation3 from '@/components/DebrisSimulation3';
 import StatisticsPanel from '@/components/StatisticsPanel';
 import SatelliteList from '@/components/SatelliteList';
 import SatelliteDetails from '@/components/SatelliteDetails';
@@ -199,11 +199,11 @@ const Index = () => {
             {/* Main visualization */}
             <div className="lg:col-span-2 space-card h-[500px]">
               {useFlaskData ? (
-                <DebrisSimulation2
+                <DebrisSimulation3
                   selectedSatellite={selectedSatellite as any}
                   onSelectSatellite={handleSelectFlaskSatellite}
                   className="h-full"
-                  apiEndpoint="/api/satellites" // Update this to your actual Flask endpoint
+                  apiEndpoint="http://localhost:5000/api/satellites/orbital-elements"
                 />
               ) : (
                 <DebrisSimulation
