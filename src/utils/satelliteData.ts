@@ -17,7 +17,7 @@ export interface SatelliteData {
   launchDate?: string;
   country?: string;
   tleData?: string[];
-  riskFactor?: number; // 0-100
+  riskFactor: number; // 0-100 - Made required to match usage
   collisionProbability?: number; // 0-1
   lastUpdated: string;
   orbitType: 'LEO' | 'MEO' | 'GEO' | 'HEO';
