@@ -1,24 +1,81 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
-import { FastForward, Play, Pause, Clock, RotateCcw } from 'lucide-react';
+import { FastForward, Play, Pause, Clock, RotateCcw, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import axios from 'axios';
+
+interface SatelliteData {
+  id: string;
+  name: string;
+  type: string;
+  orbitType: string;
+  altitude: number;
+  inclination: number;
+  riskFactor: number;
+}
+
+interface ConjunctionPrediction {
+  id: string;
+  primaryObject: string;
+  secondaryObject: string;
+  timeToConjunction: number; // hours from now
+  minimumDistance: number; // km
+  probability: number;
+  riskLevel: 'low' | 'medium' | 'high';
+}
 
 interface PredictionControlsProps {
   className?: string;
+  selectedSatellite: SatelliteData | null;
   onTimeChange: (hour: number) => void;
+  onConjunctionAlert?: (predictions: ConjunctionPrediction[]) => void;
 }
 
 const PredictionControls: React.FC<PredictionControlsProps> = ({
   className,
-  onTimeChange
+  selectedSatellite,
+  onTimeChange,
+  onConjunctionAlert
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [simulationSpeed, setSimulationSpeed] = useState(1);
   const [timeAhead, setTimeAhead] = useState(0);
+  const [conjunctionPredictions, setConjunctionPredictions] = useState<ConjunctionPrediction[]>([]);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const maxHours = 168; // 7 days
+
+  // Clear predictions when satellite changes
+  useEffect(() => {
+    setConjunctionPredictions([]);
+    setAnalysisError(null);
+    setTimeAhead(0);
+    setIsPlaying(false);
+    onTimeChange(0);
+  }, [selectedSatellite?.id, onTimeChange]);
+
+  // Auto-play functionality
+  useEffect(() => {
+    if (!isPlaying || !selectedSatellite) return;
+
+    const interval = setInterval(() => {
+      setTimeAhead(prev => {
+        const newTime = Math.min(prev + simulationSpeed, maxHours);
+        onTimeChange(newTime);
+        
+        if (newTime >= maxHours) {
+          setIsPlaying(false);
+        }
+        
+        return newTime;
+      });
+    }, 1000); // Update every second
+
+    return () => clearInterval(interval);
+  }, [isPlaying, simulationSpeed, selectedSatellite, onTimeChange]);
 
   // Format hours as days + hours
   const formatTime = (hours: number) => {
@@ -33,8 +90,61 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
     }
   };
 
+  // Analyze conjunctions for selected satellite
+  const analyzeConjunctions = async () => {
+    if (!selectedSatellite) return;
+
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+
+    try {
+      console.log('Analyzing conjunctions for:', selectedSatellite.id, selectedSatellite.name);
+      
+      // TODO: Replace with actual backend endpoint when available
+      // const response = await axios.post('http://localhost:5000/api/predict-conjunctions', {
+      //   objectId: selectedSatellite.id,
+      //   timeHorizon: maxHours,
+      //   minimumDistance: 5.0 // km
+      // });
+
+      // Simulate backend response for now
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate API delay
+      
+      const mockPredictions: ConjunctionPrediction[] = [
+        {
+          id: `conj-${Date.now()}-1`,
+          primaryObject: selectedSatellite.name,
+          secondaryObject: 'COSMOS 2251 DEB',
+          timeToConjunction: 24.5,
+          minimumDistance: 2.3,
+          probability: 0.15,
+          riskLevel: 'high'
+        },
+        {
+          id: `conj-${Date.now()}-2`,
+          primaryObject: selectedSatellite.name,
+          secondaryObject: 'Debris Fragment 12847',
+          timeToConjunction: 72.8,
+          minimumDistance: 4.7,
+          probability: 0.08,
+          riskLevel: 'medium'
+        }
+      ];
+
+      setConjunctionPredictions(mockPredictions);
+      onConjunctionAlert?.(mockPredictions);
+      
+    } catch (error) {
+      console.error('Error analyzing conjunctions:', error);
+      setAnalysisError('Failed to analyze conjunctions');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   // Toggle play/pause
   const togglePlayback = () => {
+    if (!selectedSatellite) return;
     setIsPlaying(!isPlaying);
   };
 
@@ -56,6 +166,16 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
     onTimeChange(value[0]);
   };
 
+  // Get risk level color
+  const getRiskColor = (level: string) => {
+    switch (level) {
+      case 'high': return 'text-red-400';
+      case 'medium': return 'text-yellow-400';
+      case 'low': return 'text-green-400';
+      default: return 'text-gray-400';
+    }
+  };
+
   return (
     <div className={cn("p-4 space-card", className)}>
       <div className="flex items-center justify-between mb-4">
@@ -70,9 +190,11 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
             size="icon"
             className={cn(
               "text-gray-300 hover:text-space-accent",
-              isPlaying && "text-space-accent"
+              isPlaying && "text-space-accent",
+              !selectedSatellite && "opacity-50 cursor-not-allowed"
             )}
             onClick={togglePlayback}
+            disabled={!selectedSatellite}
           >
             {isPlaying ? (
               <Pause className="h-5 w-5" />
@@ -92,6 +214,23 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
         </div>
       </div>
 
+      {/* Selected Object Info */}
+      {selectedSatellite ? (
+        <div className="mb-4 p-3 bg-space-darker rounded border border-space-grid">
+          <div className="text-sm font-medium text-white">{selectedSatellite.name}</div>
+          <div className="text-xs text-gray-400">
+            {selectedSatellite.type.toUpperCase()} • {selectedSatellite.orbitType} • 
+            Alt: {Math.round(selectedSatellite.altitude)}km
+          </div>
+        </div>
+      ) : (
+        <div className="mb-4 p-3 bg-space-darker rounded border border-space-grid border-dashed">
+          <div className="text-sm text-gray-400 text-center">
+            Select a space object to enable time prediction
+          </div>
+        </div>
+      )}
+
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-gray-400">Simulation time</span>
@@ -104,6 +243,7 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
           value={[timeAhead]}
           onValueChange={handleTimeSliderChange}
           className="py-1"
+          disabled={!selectedSatellite}
         />
         <div className="flex justify-between text-xs text-gray-400 mt-1">
           <span>Now</span>
@@ -111,7 +251,7 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
         </div>
       </div>
 
-      <div>
+      <div className="mb-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-gray-400">Playback speed</span>
         </div>
@@ -124,45 +264,72 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
               size="sm"
               className={cn(
                 "flex-1 text-sm bg-space-darker border-space-grid",
-                simulationSpeed === speed ? "border-space-accent text-space-accent" : "text-gray-300"
+                simulationSpeed === speed ? "border-space-accent text-space-accent" : "text-gray-300",
+                !selectedSatellite && "opacity-50 cursor-not-allowed"
               )}
               onClick={() => changeSpeed(speed)}
+              disabled={!selectedSatellite}
             >
-              {speed === 1 ? (
-                <>1x</>
-              ) : (
-                <>{speed}x</>
-              )}
+              {speed === 1 ? '1x' : `${speed}x`}
             </Button>
           ))}
         </div>
-        
-        <div className="mt-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-gray-400">Jump to time</span>
-          </div>
-          
-          <div className="flex space-x-2">
-            <Input 
-              type="number" 
-              min="0" 
-              max={maxHours}
-              value={timeAhead} 
-              onChange={(e) => {
-                const value = parseInt(e.target.value);
-                if (!isNaN(value) && value >= 0 && value <= maxHours) {
-                  setTimeAhead(value);
-                  onTimeChange(value);
-                }
-              }}
-              className="bg-space-darker border-space-grid text-white"
-            />
-            <Button className="bg-space-blue hover:bg-space-blue/80">
-              <FastForward className="h-4 w-4 mr-1" />
-              Go
-            </Button>
-          </div>
+      </div>
+
+      {/* Conjunction Analysis */}
+      <div className="border-t border-space-grid pt-4">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm font-medium text-white">Conjunction Analysis</span>
+          <Button
+            size="sm"
+            onClick={analyzeConjunctions}
+            disabled={!selectedSatellite || isAnalyzing}
+            className="bg-space-blue hover:bg-space-blue/80 text-xs"
+          >
+            {isAnalyzing ? 'Analyzing...' : 'Analyze'}
+          </Button>
         </div>
+
+        {analysisError && (
+          <div className="text-xs text-red-400 mb-2">{analysisError}</div>
+        )}
+
+        {conjunctionPredictions.length > 0 && (
+          <div className="space-y-2">
+            <div className="text-xs text-gray-400 mb-2">
+              {conjunctionPredictions.length} potential conjunction(s) found
+            </div>
+            {conjunctionPredictions.slice(0, 3).map((prediction) => (
+              <div 
+                key={prediction.id}
+                className="p-2 bg-space-darker rounded border border-space-grid text-xs"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-white font-medium">
+                    vs {prediction.secondaryObject}
+                  </span>
+                  <div className="flex items-center">
+                    <AlertTriangle className={cn("h-3 w-3 mr-1", getRiskColor(prediction.riskLevel))} />
+                    <span className={cn("text-xs", getRiskColor(prediction.riskLevel))}>
+                      {prediction.riskLevel.toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+                <div className="text-gray-400">
+                  In {formatTime(prediction.timeToConjunction)} • 
+                  {prediction.minimumDistance.toFixed(1)}km • 
+                  {(prediction.probability * 100).toFixed(1)}% risk
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {conjunctionPredictions.length === 0 && selectedSatellite && !isAnalyzing && (
+          <div className="text-xs text-gray-400 text-center py-2">
+            No conjunction analysis performed yet
+          </div>
+        )}
       </div>
     </div>
   );

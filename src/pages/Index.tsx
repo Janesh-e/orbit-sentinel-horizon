@@ -114,6 +114,35 @@ const Index = () => {
       .slice(0, 20);
   };
 
+  // Handle conjunction alerts from prediction analysis
+  const handleConjunctionAlert = (predictions: any[]) => {
+    predictions.forEach(prediction => {
+      const newAlert: Alert = {
+        id: `conjunction-${Date.now()}-${Math.random()}`,
+        timestamp: new Date(),
+        type: prediction.riskLevel === 'high' ? 'danger' : prediction.riskLevel === 'medium' ? 'warning' : 'info',
+        message: `Predicted conjunction: ${prediction.primaryObject} vs ${prediction.secondaryObject}`,
+        details: `Time: ${formatTime(prediction.timeToConjunction)} | Distance: ${prediction.minimumDistance.toFixed(1)}km | Risk: ${(prediction.probability * 100).toFixed(1)}%`,
+        objectIds: [selectedSatellite?.id || '']
+      };
+      
+      setAlerts(prev => [newAlert, ...prev].slice(0, 50));
+    });
+  };
+
+  // Helper function to format time for alerts
+  const formatTime = (hours: number) => {
+    if (hours === 0) return 'now';
+    const days = Math.floor(hours / 24);
+    const remainingHours = Math.floor(hours % 24);
+    
+    if (days === 0) {
+      return `+${remainingHours}h`;
+    } else {
+      return `+${days}d ${remainingHours}h`;
+    }
+  };
+
   // Get alert type based on distance
   const getAlertTypeFromDistance = (distance: number): Alert['type'] => {
     if (distance < 2) return 'danger';
@@ -341,7 +370,9 @@ const Index = () => {
               />
               
               <PredictionControls 
+                selectedSatellite={selectedSatellite}
                 onTimeChange={handleTimeChange}
+                onConjunctionAlert={handleConjunctionAlert}
               />
               
               <DangerThresholdControl
@@ -371,6 +402,7 @@ const Index = () => {
           Simulation time: {simulationTime === 0 ? 'Current' : `+${simulationTime}h`} | 
           Data source: {useFlaskData ? 'Flask API' : 'Local'} |
           {filteredSatelliteId && ' Filtered: 1 object |'}
+          {selectedSatellite && ` Selected: ${selectedSatellite.name} |`}
           Data refresh: 60s
         </div>
       </div>
