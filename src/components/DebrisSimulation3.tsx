@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useSatelliteData } from '@/hooks/useSatelliteData';
@@ -45,13 +46,66 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
   const lastMousePos = useRef({ x: 0, y: 0 });
   const rotation = useRef({ x: 0, y: 0 });
   const zoom = useRef(1);
+  const panOffset = useRef({ x: 0, y: 0 });
   const [hoveredSatellite, setHoveredSatellite] = useState<SatellitePosition | null>(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [showGridlines, setShowGridlines] = useState(true);
+  const [showInstructions, setShowInstructions] = useState(true);
+  const [showHeatmap, setShowHeatmap] = useState(false);
 
   // Use custom hooks for data management
   const { orbitalElements, error } = useSatelliteData(apiEndpoint, propSatellites);
   const satellites = useSatellitePositions(orbitalElements);
+
+  // Generate heatmap data based on object density and risk
+  const generateHeatmapData = () => {
+    const heatmapPoints: Array<{ x: number; y: number; intensity: number }> = [];
+    const gridSize = 50;
+    const canvasWidth = canvasRef.current?.width || 800;
+    const canvasHeight = canvasRef.current?.height || 600;
+    
+    for (let x = 0; x < canvasWidth; x += gridSize) {
+      for (let y = 0; y < canvasHeight; y += gridSize) {
+        let intensity = 0;
+        let objectCount = 0;
+        
+        // Check objects within this grid cell
+        satellites.forEach(obj => {
+          const scale = 0.02 * zoom.current;
+          const x3d = obj.x * scale;
+          const y3d = obj.y * scale;
+          const z3d = obj.z * scale;
+          
+          const cosRotX = Math.cos(rotation.current.x * 0.01);
+          const sinRotX = Math.sin(rotation.current.x * 0.01);
+          const cosRotY = Math.cos(rotation.current.y * 0.01);
+          const sinRotY = Math.sin(rotation.current.y * 0.01);
+          
+          const x2d = x3d * cosRotY - z3d * sinRotY;
+          const y2d = y3d * cosRotX - (x3d * sinRotY + z3d * cosRotY) * sinRotX;
+          
+          const screenX = (canvasWidth / 2) + x2d + panOffset.current.x;
+          const screenY = (canvasHeight / 2) + y2d + panOffset.current.y;
+          
+          // Check if object is within grid cell
+          if (screenX >= x && screenX < x + gridSize && screenY >= y && screenY < y + gridSize) {
+            intensity += obj.riskFactor;
+            objectCount++;
+          }
+        });
+        
+        if (objectCount > 0) {
+          heatmapPoints.push({
+            x: x + gridSize / 2,
+            y: y + gridSize / 2,
+            intensity: (intensity / objectCount) * (objectCount / 10) // Factor in density
+          });
+        }
+      }
+    }
+    
+    return heatmapPoints;
+  };
 
   // Canvas drawing and interaction logic
   useEffect(() => {
@@ -76,9 +130,39 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
 
       context.clearRect(0, 0, canvas.width, canvas.height);
 
-      const centerX = canvas.width / 2;
-      const centerY = canvas.height / 2;
+      const centerX = canvas.width / 2 + panOffset.current.x;
+      const centerY = canvas.height / 2 + panOffset.current.y;
       const earthRadius = 40 * zoom.current;
+
+      // Draw heatmap if enabled
+      if (showHeatmap) {
+        const heatmapData = generateHeatmapData();
+        heatmapData.forEach(point => {
+          const intensity = Math.min(point.intensity / 100, 1);
+          const radius = 30 * zoom.current;
+          
+          const gradient = context.createRadialGradient(
+            point.x, point.y, 0,
+            point.x, point.y, radius
+          );
+          
+          if (intensity > 0.7) {
+            gradient.addColorStop(0, `rgba(255, 0, 0, ${intensity * 0.6})`);
+            gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+          } else if (intensity > 0.4) {
+            gradient.addColorStop(0, `rgba(255, 165, 0, ${intensity * 0.5})`);
+            gradient.addColorStop(1, 'rgba(255, 165, 0, 0)');
+          } else {
+            gradient.addColorStop(0, `rgba(255, 255, 0, ${intensity * 0.4})`);
+            gradient.addColorStop(1, 'rgba(255, 255, 0, 0)');
+          }
+          
+          context.fillStyle = gradient;
+          context.beginPath();
+          context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+          context.fill();
+        });
+      }
 
       // Draw gridlines if enabled
       if (showGridlines) {
@@ -290,23 +374,26 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
 
     const handleMouseDown = (e: MouseEvent) => {
       isDragging.current = true;
-      lastMousePos.current = { x: e.clientX, y: e.clientY };
+      const rect = canvas.getBoundingClientRect();
+      lastMousePos.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     };
 
     const handleMouseMove = (e: MouseEvent) => {
       const rect = canvas.getBoundingClientRect();
-      lastMousePos.current = { 
+      const currentPos = { 
         x: e.clientX - rect.left, 
         y: e.clientY - rect.top 
       };
       
-      if (!isDragging.current) return;
+      if (isDragging.current) {
+        const deltaX = currentPos.x - lastMousePos.current.x;
+        const deltaY = currentPos.y - lastMousePos.current.y;
+        
+        rotation.current.x += deltaY * 0.005;
+        rotation.current.y += deltaX * 0.005;
+      }
       
-      const deltaX = e.clientX - lastMousePos.current.x;
-      const deltaY = e.clientY - lastMousePos.current.y;
-      
-      rotation.current.x += deltaX * 0.005;
-      rotation.current.y += deltaY * 0.005;
+      lastMousePos.current = currentPos;
     };
 
     const handleMouseUp = () => {
@@ -315,8 +402,26 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
 
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
-      zoom.current -= e.deltaY * 0.001;
-      zoom.current = Math.max(0.05, Math.min(zoom.current, 15.0)); // Extended zoom range
+      
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      
+      const oldZoom = zoom.current;
+      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      zoom.current *= zoomFactor;
+      zoom.current = Math.max(0.05, Math.min(zoom.current, 15.0));
+      
+      // Calculate zoom-to-cursor
+      const zoomChange = zoom.current / oldZoom;
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+      
+      panOffset.current.x = mouseX - (mouseX - panOffset.current.x) * zoomChange;
+      panOffset.current.y = mouseY - (mouseY - panOffset.current.y) * zoomChange;
+      
+      panOffset.current.x -= centerX;
+      panOffset.current.y -= centerY;
     };
 
     canvas.addEventListener('click', handleCanvasClick);
@@ -336,7 +441,7 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
       window.removeEventListener('mouseup', handleMouseUp);
       canvas.removeEventListener('wheel', handleWheel);
     };
-  }, [satellites, selectedSatellite, onSelectSatellite, highlightedSatellite, filteredSatelliteId, showGridlines]);
+  }, [satellites, selectedSatellite, onSelectSatellite, highlightedSatellite, filteredSatelliteId, showGridlines, showHeatmap]);
 
   return (
     <div 
@@ -369,6 +474,10 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         highlightedSatellite={highlightedSatellite}
         showGridlines={showGridlines}
         onToggleGridlines={() => setShowGridlines(!showGridlines)}
+        showInstructions={showInstructions}
+        onToggleInstructions={() => setShowInstructions(!showInstructions)}
+        showHeatmap={showHeatmap}
+        onToggleHeatmap={() => setShowHeatmap(!showHeatmap)}
       />
       
       <StatusOverlay
