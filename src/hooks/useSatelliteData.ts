@@ -34,16 +34,41 @@ export const useSatelliteData = (apiEndpoint: string, propSatellites: any[] = []
       const fetchOrbitalElements = async () => {
         try {
           console.log('Fetching orbital elements from:', apiEndpoint);
-          const response = await axios.get(apiEndpoint);
-          console.log('Received data:', response.data);
           
-          if (!response.data || !Array.isArray(response.data)) {
+          // Fetch both satellites and debris data
+          const [satelliteResponse, debrisResponse] = await Promise.all([
+            axios.get('http://localhost:5000/api/satellites/orbital-elements'),
+            axios.get('http://localhost:5000/api/debris/orbital-elements')
+          ]);
+          
+          console.log('Received satellite data:', satelliteResponse.data.length);
+          console.log('Received debris data:', debrisResponse.data.length);
+          
+          if (!satelliteResponse.data || !Array.isArray(satelliteResponse.data) ||
+              !debrisResponse.data || !Array.isArray(debrisResponse.data)) {
             throw new Error('Invalid data format received from backend');
           }
           
-          setOrbitalElements(response.data);
+          // Process satellite data
+          const processedSatellites = satelliteResponse.data.map((sat: any) => ({
+            ...sat,
+            type: 'satellite'
+          }));
+          
+          // Process debris data with unique IDs
+          const processedDebris = debrisResponse.data.map((debris: any) => ({
+            ...debris,
+            id: `debris_${debris.id}`, // Prefix to avoid ID conflicts
+            type: 'debris'
+          }));
+          
+          // Combine both datasets
+          const combinedData = [...processedSatellites, ...processedDebris];
+          
+          setOrbitalElements(combinedData);
           setError(null);
-          console.log('Successfully loaded', response.data.length, 'orbital elements');
+          console.log('Successfully loaded', combinedData.length, 'orbital elements (', 
+                     processedSatellites.length, 'satellites,', processedDebris.length, 'debris)');
         } catch (error) {
           console.error('Error fetching orbital elements:', error);
           setError(error instanceof Error ? error.message : 'Failed to fetch data');

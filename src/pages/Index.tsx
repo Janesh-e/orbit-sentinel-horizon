@@ -16,6 +16,8 @@ const Index = () => {
   const [showSidebar, setShowSidebar] = useState(true);
   const [satellites, setSatellites] = useState<SatelliteData[]>([]);
   const [flaskSatellites, setFlaskSatellites] = useState<any[]>([]);
+  const [flaskDebris, setFlaskDebris] = useState<any[]>([]);
+  const [allSpaceObjects, setAllSpaceObjects] = useState<any[]>([]);
   const [conjunctions, setConjunctions] = useState<ConjunctionEvent[]>([]);
   const [selectedSatellite, setSelectedSatellite] = useState<SatelliteData | null>(null);
   const [simulationTime, setSimulationTime] = useState(0);
@@ -29,22 +31,43 @@ const Index = () => {
   // Centralized data fetching for Flask data
   const fetchFlaskData = async () => {
     try {
-      console.log('Fetching Flask satellite data...');
-      const response = await axios.get('http://localhost:5000/api/satellites/orbital-elements');
-      console.log('Flask data received:', response.data.length, 'satellites');
+      console.log('Fetching Flask satellite and debris data...');
       
-      // Ensure consistent ID format
-      const processedData = response.data.map((sat: any, index: number) => ({
+      // Fetch satellites
+      const satelliteResponse = await axios.get('http://localhost:5000/api/satellites/orbital-elements');
+      console.log('Flask satellite data received:', satelliteResponse.data.length, 'satellites');
+      
+      // Fetch debris
+      const debrisResponse = await axios.get('http://localhost:5000/api/debris/orbital-elements');
+      console.log('Flask debris data received:', debrisResponse.data.length, 'debris');
+      
+      // Process satellite data
+      const processedSatellites = satelliteResponse.data.map((sat: any, index: number) => ({
         ...sat,
-        id: sat.id || String(index), // Ensure string ID
+        id: sat.id || String(index),
         name: sat.name || `Satellite ${index}`,
-        type: sat.type || 'satellite',
+        type: 'satellite',
         riskFactor: sat.riskFactor || 0
       }));
       
-      setFlaskSatellites(processedData);
-      console.log('Processed Flask data:', processedData.length, 'satellites with IDs:', processedData.slice(0, 3).map(s => s.id));
-      return processedData;
+      // Process debris data with unique IDs
+      const processedDebris = debrisResponse.data.map((debris: any, index: number) => ({
+        ...debris,
+        id: `debris_${debris.id || index}`, // Prefix to avoid ID conflicts
+        name: debris.name || `Debris ${index}`,
+        type: 'debris',
+        riskFactor: debris.riskFactor || 0
+      }));
+      
+      // Combine all space objects
+      const combinedObjects = [...processedSatellites, ...processedDebris];
+      
+      setFlaskSatellites(processedSatellites);
+      setFlaskDebris(processedDebris);
+      setAllSpaceObjects(combinedObjects);
+      
+      console.log('Processed data:', processedSatellites.length, 'satellites,', processedDebris.length, 'debris');
+      return combinedObjects;
     } catch (error) {
       console.error('Error fetching Flask data:', error);
       return [];
@@ -108,41 +131,41 @@ const Index = () => {
       id: `select-${Date.now()}`,
       timestamp: new Date(),
       type: 'info',
-      message: `Selected satellite: ${satellite.name}`,
+      message: `Selected ${satellite.type}: ${satellite.name}`,
       details: `Orbit: ${satellite.orbitType} | Inclination: ${satellite.inclination.toFixed(2)}° | Altitude: ${satellite.altitude.toFixed(2)}km`
     };
     
     setAlerts(prev => [newAlert, ...prev].slice(0, 50));
   };
 
-  const handleSelectFlaskSatellite = (satellite: any) => {
-    console.log('Selecting Flask satellite:', satellite.id, satellite.name);
+  const handleSelectFlaskObject = (spaceObject: any) => {
+    console.log('Selecting Flask space object:', spaceObject.id, spaceObject.name, spaceObject.type);
     
-    const convertedSatellite: SatelliteData = {
-      id: satellite.id,
-      name: satellite.name,
-      type: satellite.type,
-      orbitType: satellite.orbitType,
-      inclination: satellite.inclination * 180 / Math.PI,
-      altitude: satellite.semiMajorAxis ? satellite.semiMajorAxis - 6371 : 0,
+    const convertedObject: SatelliteData = {
+      id: spaceObject.id,
+      name: spaceObject.name,
+      type: spaceObject.type,
+      orbitType: spaceObject.orbitType,
+      inclination: spaceObject.inclination * 180 / Math.PI,
+      altitude: spaceObject.semiMajorAxis ? spaceObject.semiMajorAxis - 6371 : 0,
       velocity: 0,
       launchDate: new Date().toISOString(),
-      position: satellite.currentPosition || { x: 0, y: 0, z: 0 },
-      riskFactor: satellite.riskFactor || 0,
-      size: satellite.size || 1,
-      collisionProbability: satellite.collisionProbability || 0,
+      position: spaceObject.currentPosition || { x: 0, y: 0, z: 0 },
+      riskFactor: spaceObject.riskFactor || 0,
+      size: spaceObject.size || 1,
+      collisionProbability: spaceObject.collisionProbability || 0,
       lastUpdated: new Date().toISOString()
     };
     
-    setSelectedSatellite(convertedSatellite);
-    setHighlightedSatellite(satellite.id);
+    setSelectedSatellite(convertedObject);
+    setHighlightedSatellite(spaceObject.id);
     
     const newAlert: Alert = {
       id: `select-${Date.now()}`,
       timestamp: new Date(),
       type: 'info',
-      message: `Selected satellite: ${satellite.name}`,
-      details: `Orbit: ${satellite.orbitType} | Inclination: ${(satellite.inclination * 180 / Math.PI).toFixed(2)}°`
+      message: `Selected ${spaceObject.type}: ${spaceObject.name}`,
+      details: `Orbit: ${spaceObject.orbitType} | Inclination: ${(spaceObject.inclination * 180 / Math.PI).toFixed(2)}°`
     };
     
     setAlerts(prev => [newAlert, ...prev].slice(0, 50));
@@ -154,16 +177,16 @@ const Index = () => {
     setSearchTerm(term);
     
     if (term && useFlaskData) {
-      const foundSatellite = flaskSatellites.find(sat => 
-        sat.name.toLowerCase().includes(term.toLowerCase()) || 
-        sat.id.toLowerCase().includes(term.toLowerCase())
+      const foundObject = allSpaceObjects.find(obj => 
+        obj.name.toLowerCase().includes(term.toLowerCase()) || 
+        obj.id.toLowerCase().includes(term.toLowerCase())
       );
-      if (foundSatellite) {
-        console.log('Found Flask satellite for search:', foundSatellite.id, foundSatellite.name);
-        setHighlightedSatellite(foundSatellite.id);
-        setFilteredSatelliteId(null); // Clear filter when searching
+      if (foundObject) {
+        console.log('Found space object for search:', foundObject.id, foundObject.name, foundObject.type);
+        setHighlightedSatellite(foundObject.id);
+        setFilteredSatelliteId(null);
       } else {
-        console.log('No Flask satellite found for search term:', term);
+        console.log('No space object found for search term:', term);
         setHighlightedSatellite(null);
       }
     } else if (term && !useFlaskData) {
@@ -174,7 +197,7 @@ const Index = () => {
       if (foundSatellite) {
         console.log('Found dummy satellite for search:', foundSatellite.id, foundSatellite.name);
         setHighlightedSatellite(foundSatellite.id);
-        setFilteredSatelliteId(null); // Clear filter when searching
+        setFilteredSatelliteId(null);
       } else {
         console.log('No dummy satellite found for search term:', term);
         setHighlightedSatellite(null);
@@ -186,18 +209,16 @@ const Index = () => {
   };
 
   // Enhanced filter functionality
-  const handleFilterSatellite = (satelliteId: string) => {
-    console.log('Filter satellite:', satelliteId);
+  const handleFilterSatellite = (objectId: string) => {
+    console.log('Filter space object:', objectId);
     
-    if (filteredSatelliteId === satelliteId) {
-      // Toggle off filter
+    if (filteredSatelliteId === objectId) {
       setFilteredSatelliteId(null);
       setHighlightedSatellite(null);
     } else {
-      // Set new filter
-      setFilteredSatelliteId(satelliteId);
-      setHighlightedSatellite(satelliteId);
-      setSearchTerm(''); // Clear search when filtering
+      setFilteredSatelliteId(objectId);
+      setHighlightedSatellite(objectId);
+      setSearchTerm('');
     }
   };
 
@@ -269,9 +290,9 @@ const Index = () => {
           <div className="w-80 border-r border-space-grid bg-space-dark overflow-y-auto flex-shrink-0">
             <div className="p-4">
               <SatelliteList
-                satellites={useFlaskData ? flaskSatellites : satellites}
+                satellites={useFlaskData ? allSpaceObjects : satellites}
                 selectedSatellite={selectedSatellite}
-                onSelectSatellite={useFlaskData ? handleSelectFlaskSatellite : handleSelectSatellite}
+                onSelectSatellite={useFlaskData ? handleSelectFlaskObject : handleSelectSatellite}
                 onSearch={handleSearch}
                 onFilterSatellite={handleFilterSatellite}
                 highlightedSatellite={highlightedSatellite}
@@ -296,12 +317,12 @@ const Index = () => {
               {useFlaskData ? (
                 <DebrisSimulation3
                   selectedSatellite={selectedSatellite as any}
-                  onSelectSatellite={handleSelectFlaskSatellite}
+                  onSelectSatellite={handleSelectFlaskObject}
                   highlightedSatellite={highlightedSatellite}
                   filteredSatelliteId={filteredSatelliteId}
                   className="h-full"
                   apiEndpoint="http://localhost:5000/api/satellites/orbital-elements"
-                  satellites={flaskSatellites}
+                  satellites={allSpaceObjects}
                 />
               ) : (
                 <DebrisSimulation
@@ -342,12 +363,14 @@ const Index = () => {
       
       <div className="h-6 px-4 bg-space-dark border-t border-space-grid flex items-center justify-between text-xs text-gray-400">
         <div>
-          Tracking {useFlaskData ? flaskSatellites.length : satellites.length} objects | {conjunctions.length} potential conjunctions | Threshold: {dangerThreshold.toFixed(1)}km
+          Tracking {useFlaskData ? allSpaceObjects.length : satellites.length} objects 
+          {useFlaskData && ` (${flaskSatellites.length} satellites, ${flaskDebris.length} debris)`} | 
+          {conjunctions.length} potential conjunctions | Threshold: {dangerThreshold.toFixed(1)}km
         </div>
         <div>
           Simulation time: {simulationTime === 0 ? 'Current' : `+${simulationTime}h`} | 
           Data source: {useFlaskData ? 'Flask API' : 'Local'} |
-          {filteredSatelliteId && ' Filtered: 1 satellite |'}
+          {filteredSatelliteId && ' Filtered: 1 object |'}
           Data refresh: 60s
         </div>
       </div>

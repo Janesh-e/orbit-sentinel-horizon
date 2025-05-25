@@ -1,9 +1,10 @@
+
 import React from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, Calendar, Download, ExternalLink, Flag, Globe, Info } from 'lucide-react';
+import { AlertCircle, Calendar, Download, ExternalLink, Flag, Globe, Info, Trash2, Satellite } from 'lucide-react';
 import { SatelliteData, ConjunctionEvent } from '@/utils/satelliteData';
 import { useSatelliteDetails } from '@/hooks/useSatelliteDetails';
 import { cn } from '@/lib/utils';
@@ -19,7 +20,7 @@ const SatelliteDetails: React.FC<SatelliteDetailsProps> = ({
   conjunctions,
   className
 }) => {
-  // Fetch detailed satellite data using the new API
+  // Fetch detailed satellite/debris data using the new API
   const { details, loading, error } = useSatelliteDetails(satellite?.id || null);
   
   if (!satellite) {
@@ -37,7 +38,8 @@ const SatelliteDetails: React.FC<SatelliteDetailsProps> = ({
 
   // Use detailed data if available, fallback to satellite prop data
   const displayData = details || satellite;
-  const satelliteConjunctions = conjunctions.filter(
+  const isDebris = satellite.type === 'debris';
+  const objectConjunctions = conjunctions.filter(
     (conj) => conj.primaryObject === satellite.id || conj.secondaryObject === satellite.id
   );
   
@@ -72,12 +74,19 @@ const SatelliteDetails: React.FC<SatelliteDetailsProps> = ({
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="text-white flex items-center">
+              {isDebris ? (
+                <Trash2 className="mr-2 h-5 w-5 text-gray-400" />
+              ) : (
+                <Satellite className="mr-2 h-5 w-5 text-space-accent" />
+              )}
               {displayData.name}
               {displayData.riskFactor && displayData.riskFactor >= 60 && (
                 <AlertCircle className="ml-2 h-4 w-4 text-space-accent-alt" />
               )}
             </CardTitle>
-            <p className="text-sm text-gray-400">{displayData.id}</p>
+            <p className="text-sm text-gray-400">
+              {displayData.id} • {isDebris ? 'Space Debris' : 'Active Satellite'}
+            </p>
           </div>
           <Button
             variant="outline"
@@ -100,7 +109,7 @@ const SatelliteDetails: React.FC<SatelliteDetailsProps> = ({
               Orbital Data
             </TabsTrigger>
             <TabsTrigger value="conjunctions" className="data-[state=active]:bg-space-grid data-[state=active]:text-white">
-              Conjunctions ({satelliteConjunctions.length})
+              Conjunctions ({objectConjunctions.length})
             </TabsTrigger>
           </TabsList>
         </div>
@@ -122,12 +131,26 @@ const SatelliteDetails: React.FC<SatelliteDetailsProps> = ({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs text-gray-400 mb-1">Type</p>
-              <p className="text-sm text-white capitalize">{displayData.type}</p>
+              <p className="text-sm text-white capitalize flex items-center">
+                {isDebris ? (
+                  <>
+                    <Trash2 className="h-3 w-3 mr-1 text-gray-400" />
+                    Space Debris
+                  </>
+                ) : (
+                  <>
+                    <Satellite className="h-3 w-3 mr-1 text-space-accent" />
+                    Active Satellite
+                  </>
+                )}
+              </p>
             </div>
             
             {(displayData.launchDate || satellite.launchDate) && (
               <div>
-                <p className="text-xs text-gray-400 mb-1">Launch Date</p>
+                <p className="text-xs text-gray-400 mb-1">
+                  {isDebris ? 'Fragment Date' : 'Launch Date'}
+                </p>
                 <p className="text-sm text-white flex items-center">
                   <Calendar className="h-3 w-3 mr-1" />
                   {displayData.launchDate || satellite.launchDate}
@@ -147,7 +170,9 @@ const SatelliteDetails: React.FC<SatelliteDetailsProps> = ({
             
             {displayData.riskFactor !== undefined && (
               <div>
-                <p className="text-xs text-gray-400 mb-1">Risk Factor</p>
+                <p className="text-xs text-gray-400 mb-1">
+                  {isDebris ? 'Collision Risk' : 'Risk Factor'}
+                </p>
                 <p className={cn(
                   "text-sm flex items-center",
                   displayData.riskFactor >= 60 ? "text-space-accent-alt" :
@@ -244,13 +269,13 @@ const SatelliteDetails: React.FC<SatelliteDetailsProps> = ({
         </TabsContent>
         
         <TabsContent value="conjunctions" className="px-6 py-4">
-          {satelliteConjunctions.length === 0 ? (
+          {objectConjunctions.length === 0 ? (
             <div className="text-center py-8 text-gray-400">
-              <p>No conjunction events recorded for this object.</p>
+              <p>No conjunction events recorded for this {isDebris ? 'debris object' : 'satellite'}.</p>
             </div>
           ) : (
             <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-              {satelliteConjunctions.map((conj) => {
+              {objectConjunctions.map((conj) => {
                 const isPast = new Date(conj.time) < new Date();
                 const isHighRisk = conj.probability > 0.01;
                 
@@ -340,9 +365,11 @@ const SatelliteDetails: React.FC<SatelliteDetailsProps> = ({
           Subscribe to Alerts
         </Button>
         
-        <Button variant="outline" size="sm" className="bg-space-darker border-space-grid text-white">
-          Simulate Maneuver
-        </Button>
+        {!isDebris && (
+          <Button variant="outline" size="sm" className="bg-space-darker border-space-grid text-white">
+            Simulate Maneuver
+          </Button>
+        )}
       </CardFooter>
     </Card>
   );

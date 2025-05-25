@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useSatelliteData } from '@/hooks/useSatelliteData';
@@ -149,16 +148,16 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
 
       setHoveredSatellite(null);
       
-      const satellitesToDraw = filteredSatelliteId 
+      const objectsToDraw = filteredSatelliteId 
         ? satellites.filter(sat => sat.id === filteredSatelliteId)
         : satellites;
       
-      // Draw satellites
-      satellitesToDraw.forEach((sat) => {
+      // Draw space objects (satellites and debris)
+      objectsToDraw.forEach((obj) => {
         const scale = 0.02 * zoom.current;
-        const x3d = sat.x * scale;
-        const y3d = sat.y * scale;
-        const z3d = sat.z * scale;
+        const x3d = obj.x * scale;
+        const y3d = obj.y * scale;
+        const z3d = obj.z * scale;
         
         const cosRotX = Math.cos(rotation.current.x * 0.01);
         const sinRotX = Math.sin(rotation.current.x * 0.01);
@@ -174,19 +173,21 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         const z2d = x3d * sinRotY + z3d * cosRotY;
         if (z2d < -1000) return;
         
-        const isSelected = selectedSatellite && selectedSatellite.id === sat.id;
-        const isHighlighted = highlightedSatellite === sat.id;
-        const isFiltered = filteredSatelliteId === sat.id;
+        const isSelected = selectedSatellite && selectedSatellite.id === obj.id;
+        const isHighlighted = highlightedSatellite === obj.id;
+        const isFiltered = filteredSatelliteId === obj.id;
         
-        let size = sat.orbitType === 'LEO' ? 6 * zoom.current : 4 * zoom.current;
+        // Different sizes for satellites vs debris
+        let baseSize = obj.type === 'debris' ? 3 : 6; // Debris is smaller
+        let size = (obj.orbitType === 'LEO' ? baseSize : baseSize * 0.7) * zoom.current;
         
         if (isHighlighted || isFiltered) {
           size *= 1.5;
         }
         
-        // Draw satellite trail for highlighted satellites
+        // Draw trail for highlighted objects
         if (isHighlighted || isFiltered) {
-          context.strokeStyle = 'rgba(59, 130, 246, 0.5)';
+          context.strokeStyle = obj.type === 'debris' ? 'rgba(156, 163, 175, 0.5)' : 'rgba(59, 130, 246, 0.5)';
           context.lineWidth = 2;
           context.beginPath();
           const trailLength = 30;
@@ -205,19 +206,21 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
           context.globalAlpha = 1;
         }
         
-        // Draw satellite
+        // Draw object with different colors for satellites vs debris
         context.beginPath();
         
         if (isHighlighted || isFiltered) {
-          context.fillStyle = '#3b82f6';
-        } else if (sat.riskFactor > 60) {
-          context.fillStyle = '#ef4444';
+          context.fillStyle = obj.type === 'debris' ? '#9ca3af' : '#3b82f6'; // Grey for debris, blue for satellites
+        } else if (obj.type === 'debris') {
+          context.fillStyle = '#6b7280'; // Grey for debris
+        } else if (obj.riskFactor > 60) {
+          context.fillStyle = '#ef4444'; // Red for high-risk satellites
         } else {
-          context.fillStyle = '#10b981';
+          context.fillStyle = '#10b981'; // Green for normal satellites
         }
         
         if (isSelected) {
-          context.shadowColor = '#3b82f6';
+          context.shadowColor = obj.type === 'debris' ? '#9ca3af' : '#3b82f6';
           context.shadowBlur = 15;
           context.arc(screenX, screenY, size * 1.2, 0, Math.PI * 2);
         } else {
@@ -228,18 +231,18 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         context.fill();
         context.shadowBlur = 0;
         
-        (sat as any).screenPosition = { x: screenX, y: screenY, size };
+        (obj as any).screenPosition = { x: screenX, y: screenY, size };
         
         if (isSelected || isHighlighted || isFiltered) {
           context.font = '12px Arial';
           context.fillStyle = '#ffffff';
           context.textAlign = 'center';
-          context.fillText(sat.name, screenX, screenY - 25);
+          context.fillText(obj.name, screenX, screenY - 25);
           
           if (isHighlighted || isFiltered) {
             context.font = '10px Arial';
-            context.fillText(`Alt: ${Math.round(sat.altitude)}km`, screenX, screenY - 10);
-            context.fillText(`ID: ${sat.id}`, screenX, screenY + 25);
+            context.fillText(`Alt: ${Math.round(obj.altitude)}km`, screenX, screenY - 10);
+            context.fillText(`${obj.type.toUpperCase()}: ${obj.id}`, screenX, screenY + 25);
           }
         }
         
@@ -249,7 +252,7 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
           const distance = Math.sqrt(dx * dx + dy * dy);
           
           if (distance < size + 5) {
-            setHoveredSatellite(sat);
+            setHoveredSatellite(obj);
             setMousePosition({ x: screenX, y: screenY });
           }
         }
@@ -264,12 +267,12 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       
-      const satellitesToCheck = filteredSatelliteId 
+      const objectsToCheck = filteredSatelliteId 
         ? satellites.filter(sat => sat.id === filteredSatelliteId)
         : satellites;
       
-      for (const sat of satellitesToCheck) {
-        const screenPos = (sat as any).screenPosition;
+      for (const obj of objectsToCheck) {
+        const screenPos = (obj as any).screenPosition;
         if (screenPos) {
           const distance = Math.sqrt(
             Math.pow(screenPos.x - x, 2) + 
@@ -277,8 +280,8 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
           );
           
           if (distance < screenPos.size + 5) {
-            console.log('Clicked on satellite in simulation:', sat.id, sat.name);
-            onSelectSatellite(sat);
+            console.log('Clicked on space object in simulation:', obj.id, obj.name, obj.type);
+            onSelectSatellite(obj);
             return;
           }
         }
@@ -313,7 +316,7 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       zoom.current -= e.deltaY * 0.001;
-      zoom.current = Math.max(0.1, Math.min(zoom.current, 10.0));
+      zoom.current = Math.max(0.05, Math.min(zoom.current, 15.0)); // Extended zoom range
     };
 
     canvas.addEventListener('click', handleCanvasClick);
