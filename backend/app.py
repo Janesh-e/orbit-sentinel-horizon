@@ -25,7 +25,11 @@ ts = load.timescale()
 
 celery.conf.beat_schedule = {
     'fetch-tle-every-6-hours': {
-        'task': 'tasks.fetch_tle',
+        'task': 'celery_tasks.fetch_tle_satellite',
+        'schedule': crontab(minute=0, hour='*/6'),  # every 6 hours
+    },
+    'fetch-iridium-debris-every-6-hours': {
+        'task': 'celery_tasks.fetch_tle_debris',
         'schedule': crontab(minute=0, hour='*/6'),  # every 6 hours
     },
 }
@@ -345,6 +349,130 @@ def get_satellite_details(sat_id):
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": f"Error processing satellite: {e}"}), 500
+
+
+@app.route('/api/debris/orbital-elements')
+def get_debris_orbital_elements():
+    """Return orbital elements for debris objects for real-time simulation"""
+    output_file = 'cached_debris.tle'
+    try:
+        with open(output_file, 'r', encoding='utf-8') as f:
+            lines = f.read().strip().splitlines()
+            lines = [line for line in lines if line.strip()]
+    except FileNotFoundError:
+        return jsonify({"error": "Cached debris TLE file not found."}), 500
+
+    orbital_data = []
+    now = ts.now()
+
+    for i in range(0, len(lines), 3):
+        try:
+            name = lines[i].strip()
+            line1 = lines[i + 1].strip()
+            line2 = lines[i + 2].strip()
+            
+            satellite = EarthSatellite(line1, line2, name, ts)
+            satrec = satellite.model
+
+            semi_major_axis = satrec.a * 6378.137  # km
+            eccentricity = satrec.ecco
+            inclination = satrec.inclo  # radians
+            right_ascension = satrec.nodeo  # radians
+            arg_of_perigee = satrec.argpo  # radians
+            mean_anomaly = satrec.mo  # radians
+            mean_motion = satrec.no_kozai * (2 * math.pi) / (24 * 3600)  # rad/s
+
+            period_minutes = (2 * math.pi) / mean_motion / 60
+
+            geocentric = satellite.at(now)
+            x, y, z = geocentric.position.km
+
+            orbital_data.append({
+                "id": str(i // 3),
+                "name": name,
+                "semiMajorAxis": semi_major_axis,
+                "eccentricity": eccentricity,
+                "inclination": inclination,
+                "rightAscension": right_ascension,
+                "argumentOfPerigee": arg_of_perigee,
+                "meanAnomaly": mean_anomaly,
+                "meanMotion": mean_motion,
+                "period": period_minutes,
+                "epoch": now.tt,
+                "currentPosition": {"x": x, "y": y, "z": z},
+                "type": "debris",
+                "orbitType": classify_orbit(semi_major_axis - 6371),
+                "riskFactor": calculate_collision_risk(x, y, z, semi_major_axis),
+                "noradId": satrec.satnum
+            })
+        except Exception as e:
+            continue
+
+    orbital_data.sort(key=lambda x: (x["orbitType"], -x["riskFactor"] if x["riskFactor"] else 0))
+    
+    return jsonify(orbital_data[:20])  # limit for performance
+
+
+@app.route('/api/debris/<int:debris_id>')
+def get_debris_details(debris_id):
+    output_file = 'cached_debris.tle'
+
+    try:
+        with open(output_file, 'r', encoding='utf-8') as f:
+            lines = f.read().strip().splitlines()
+            lines = [line for line in lines if line.strip()]
+    except FileNotFoundError:
+        return jsonify({"error": "Cached debris TLE file not found."}), 500
+
+    total_debris = len(lines) // 3
+    if debris_id < 0 or debris_id >= total_debris:
+        return jsonify({"error": "Debris ID out of range."}), 404
+
+    idx = debris_id * 3
+    try:
+        name = lines[idx].strip()
+        line1 = lines[idx + 1].strip()
+        line2 = lines[idx + 2].strip()
+
+        satellite = EarthSatellite(line1, line2, name, ts)
+        satrec = satellite.model
+
+        semi_major_axis = satrec.a * 6378.137  # km
+        eccentricity = satrec.ecco
+        inclination = math.degrees(satrec.inclo)
+        now = ts.now()
+        geocentric = satellite.at(now)
+        velocity = geocentric.velocity.km_per_s
+        speed = math.sqrt(sum(v**2 for v in velocity))
+
+        altitude = semi_major_axis - 6371
+
+        risk_factor = calculate_collision_risk(*geocentric.position.km, semi_major_axis)
+        orbit_type = classify_orbit(altitude)
+
+        launch_date = None
+        tle_epoch_dt = satellite.epoch.utc_datetime()
+
+        result = {
+            "id": debris_id,
+            "name": name,
+            "type": "debris",
+            "launchDate": launch_date,
+            "riskFactor": risk_factor,
+            "lastUpdated": tle_epoch_dt.isoformat(),
+            "orbitType": orbit_type,
+            "altitude_km": altitude,
+            "inclination_deg": inclination,
+            "velocity_km_s": speed,
+            "tle": {
+                "line1": line1,
+                "line2": line2
+            }
+        }
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": f"Error processing debris: {e}"}), 500
+
 
 
 if __name__ == '__main__':
