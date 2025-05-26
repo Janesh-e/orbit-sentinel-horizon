@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useSatelliteData } from '@/hooks/useSatelliteData';
@@ -59,19 +58,23 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
 
   // Generate heatmap data based on object density and risk
   const generateHeatmapData = () => {
-    const heatmapPoints: Array<{ x: number; y: number; intensity: number }> = [];
-    const gridSize = 50;
-    const canvasWidth = canvasRef.current?.width || 800;
-    const canvasHeight = canvasRef.current?.height || 600;
+    if (!canvasRef.current) return [];
     
-    for (let x = 0; x < canvasWidth; x += gridSize) {
-      for (let y = 0; y < canvasHeight; y += gridSize) {
-        let intensity = 0;
+    const canvas = canvasRef.current;
+    const heatmapPoints: Array<{ x: number; y: number; intensity: number }> = [];
+    const gridSize = 80;
+    const scale = 0.02 * zoom.current;
+    
+    for (let x = 0; x < canvas.width; x += gridSize) {
+      for (let y = 0; y < canvas.height; y += gridSize) {
+        let totalRisk = 0;
         let objectCount = 0;
         
         // Check objects within this grid cell
         satellites.forEach(obj => {
-          const scale = 0.02 * zoom.current;
+          const centerX = canvas.width / 2 + panOffset.current.x;
+          const centerY = canvas.height / 2 + panOffset.current.y;
+          
           const x3d = obj.x * scale;
           const y3d = obj.y * scale;
           const z3d = obj.z * scale;
@@ -84,22 +87,25 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
           const x2d = x3d * cosRotY - z3d * sinRotY;
           const y2d = y3d * cosRotX - (x3d * sinRotY + z3d * cosRotY) * sinRotX;
           
-          const screenX = (canvasWidth / 2) + x2d + panOffset.current.x;
-          const screenY = (canvasHeight / 2) + y2d + panOffset.current.y;
+          const screenX = centerX + x2d;
+          const screenY = centerY + y2d;
           
           // Check if object is within grid cell
           if (screenX >= x && screenX < x + gridSize && screenY >= y && screenY < y + gridSize) {
-            intensity += obj.riskFactor;
+            totalRisk += obj.riskFactor;
             objectCount++;
           }
         });
         
         if (objectCount > 0) {
-          heatmapPoints.push({
-            x: x + gridSize / 2,
-            y: y + gridSize / 2,
-            intensity: (intensity / objectCount) * (objectCount / 10) // Factor in density
-          });
+          const intensity = (totalRisk / objectCount) * Math.min(objectCount / 5, 1);
+          if (intensity > 10) { // Only show significant risk areas
+            heatmapPoints.push({
+              x: x + gridSize / 2,
+              y: y + gridSize / 2,
+              intensity: Math.min(intensity, 100)
+            });
+          }
         }
       }
     }
@@ -138,8 +144,8 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
       if (showHeatmap) {
         const heatmapData = generateHeatmapData();
         heatmapData.forEach(point => {
-          const intensity = Math.min(point.intensity / 100, 1);
-          const radius = 30 * zoom.current;
+          const intensity = point.intensity / 100;
+          const radius = 40 * zoom.current;
           
           const gradient = context.createRadialGradient(
             point.x, point.y, 0,
@@ -147,13 +153,13 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
           );
           
           if (intensity > 0.7) {
-            gradient.addColorStop(0, `rgba(255, 0, 0, ${intensity * 0.6})`);
+            gradient.addColorStop(0, `rgba(255, 0, 0, ${intensity * 0.7})`);
             gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
           } else if (intensity > 0.4) {
-            gradient.addColorStop(0, `rgba(255, 165, 0, ${intensity * 0.5})`);
+            gradient.addColorStop(0, `rgba(255, 165, 0, ${intensity * 0.6})`);
             gradient.addColorStop(1, 'rgba(255, 165, 0, 0)');
           } else {
-            gradient.addColorStop(0, `rgba(255, 255, 0, ${intensity * 0.4})`);
+            gradient.addColorStop(0, `rgba(255, 255, 0, ${intensity * 0.5})`);
             gradient.addColorStop(1, 'rgba(255, 255, 0, 0)');
           }
           
@@ -407,21 +413,22 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
       
-      const oldZoom = zoom.current;
+      // Get the world coordinates before zoom
+      const beforeZoomX = (mouseX - canvas.width / 2 - panOffset.current.x) / zoom.current;
+      const beforeZoomY = (mouseY - canvas.height / 2 - panOffset.current.y) / zoom.current;
+      
+      // Apply zoom
       const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-      zoom.current *= zoomFactor;
-      zoom.current = Math.max(0.05, Math.min(zoom.current, 15.0));
+      const newZoom = zoom.current * zoomFactor;
+      zoom.current = Math.max(0.1, Math.min(newZoom, 5.0));
       
-      // Calculate zoom-to-cursor
-      const zoomChange = zoom.current / oldZoom;
-      const centerX = canvas.width / 2;
-      const centerY = canvas.height / 2;
+      // Get the world coordinates after zoom
+      const afterZoomX = (mouseX - canvas.width / 2 - panOffset.current.x) / zoom.current;
+      const afterZoomY = (mouseY - canvas.height / 2 - panOffset.current.y) / zoom.current;
       
-      panOffset.current.x = mouseX - (mouseX - panOffset.current.x) * zoomChange;
-      panOffset.current.y = mouseY - (mouseY - panOffset.current.y) * zoomChange;
-      
-      panOffset.current.x -= centerX;
-      panOffset.current.y -= centerY;
+      // Adjust pan to keep the cursor position consistent
+      panOffset.current.x += (afterZoomX - beforeZoomX) * zoom.current;
+      panOffset.current.y += (afterZoomY - beforeZoomY) * zoom.current;
     };
 
     canvas.addEventListener('click', handleCanvasClick);
