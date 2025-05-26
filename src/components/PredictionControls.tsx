@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -204,13 +203,17 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
   };
 
   // Get risk level color
-  const getRiskColor = (level: string) => {
-    switch (level) {
-      case 'high': return 'text-red-400';
-      case 'medium': return 'text-yellow-400';
-      case 'low': return 'text-green-400';
-      default: return 'text-gray-400';
-    }
+  const getRiskColor = (distance: number) => {
+    if (distance < 2) return 'text-red-400';
+    if (distance < 5) return 'text-yellow-400';
+    return 'text-green-400';
+  };
+
+  // Get risk level text
+  const getRiskLevel = (distance: number) => {
+    if (distance < 2) return 'HIGH';
+    if (distance < 5) return 'MEDIUM';
+    return 'LOW';
   };
 
   return (
@@ -340,43 +343,74 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
           </div>
         )}
 
+        {/* Display conjunction results */}
         {backendConjunctions.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="text-xs text-gray-400 mb-2">
               {backendConjunctions.length} conjunction(s) found
             </div>
-            {backendConjunctions.slice(0, 5).map((conjunction, index) => (
-              <div 
-                key={`${conjunction.withId}-${index}`}
-                className="p-2 bg-space-darker rounded border border-space-grid text-xs"
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-white font-medium">
-                    vs {conjunction.withName}
-                  </span>
-                  <div className="flex items-center">
-                    <AlertTriangle className={cn("h-3 w-3 mr-1", 
-                      conjunction.closestDistance_km < 2 ? 'text-red-400' :
-                      conjunction.closestDistance_km < 5 ? 'text-yellow-400' : 'text-green-400'
-                    )} />
-                    <span className={cn("text-xs",
-                      conjunction.closestDistance_km < 2 ? 'text-red-400' :
-                      conjunction.closestDistance_km < 5 ? 'text-yellow-400' : 'text-green-400'
-                    )}>
-                      {conjunction.closestDistance_km < 2 ? 'HIGH' :
-                       conjunction.closestDistance_km < 5 ? 'MEDIUM' : 'LOW'}
-                    </span>
+            <div className="max-h-[300px] overflow-y-auto pr-1 space-y-3">
+              {backendConjunctions.map((conjunction, index) => {
+                const riskLevel = getRiskLevel(conjunction.closestDistance_km);
+                const riskColor = getRiskColor(conjunction.closestDistance_km);
+                const isHighRisk = conjunction.closestDistance_km < 2;
+                
+                return (
+                  <div
+                    key={`${conjunction.withId}-${index}`}
+                    className="p-3 bg-space-darker border border-space-grid rounded-md"
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <p className="text-sm font-medium text-white flex items-center">
+                          Conjunction Event
+                          {isHighRisk && <AlertTriangle className="ml-1 h-3 w-3 text-red-400" />}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          With: {conjunction.withName} ({conjunction.withType.toUpperCase()})
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <div className="flex items-center">
+                          <AlertTriangle className={cn("h-3 w-3 mr-1", riskColor)} />
+                          <span className={cn("text-xs font-medium", riskColor)}>
+                            {riskLevel}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">
+                          ID: {conjunction.withId}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-2 mt-3">
+                      <div>
+                        <p className="text-xs text-gray-400">Distance</p>
+                        <p className="text-sm text-white">{conjunction.closestDistance_km.toFixed(2)} km</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-400">Probability</p>
+                        <p className={cn(
+                          "text-sm",
+                          conjunction.probability > 0.01 ? "text-red-400" : "text-white"
+                        )}>
+                          {(conjunction.probability * 100).toFixed(4)}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-400">Velocity</p>
+                        <p className="text-sm text-white">{conjunction.relativeVelocity_km_s.toFixed(2)} km/s</p>
+                      </div>
+                    </div>
+                    
+                    <div className="mt-2 pt-2 border-t border-space-grid">
+                      <p className="text-xs text-gray-400">Expected Time</p>
+                      <p className="text-sm text-white">{conjunction.time}</p>
+                    </div>
                   </div>
-                </div>
-                <div className="text-gray-400 space-y-1">
-                  <div>Distance: {conjunction.closestDistance_km.toFixed(2)}km</div>
-                  <div>Velocity: {conjunction.relativeVelocity_km_s.toFixed(2)}km/s</div>
-                  <div>Probability: {(conjunction.probability * 100).toFixed(2)}%</div>
-                  <div>Type: {conjunction.withType.toUpperCase()}</div>
-                  <div>Time: {conjunction.time}</div>
-                </div>
-              </div>
-            ))}
+                );
+              })}
+            </div>
           </div>
         )}
 
