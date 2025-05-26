@@ -27,23 +27,42 @@ interface ConjunctionPrediction {
   riskLevel: 'low' | 'medium' | 'high';
 }
 
+interface BackendConjunctionResult {
+  withId: string;
+  withName: string;
+  withType: string;
+  closestDistance_km: number;
+  relativeVelocity_km_s: number;
+  probability: number;
+  time: string;
+}
+
+interface BackendResponse {
+  objectId: string;
+  objectType: string;
+  conjunctions: BackendConjunctionResult[];
+}
+
 interface PredictionControlsProps {
   className?: string;
   selectedSatellite: SatelliteData | null;
   onTimeChange: (hour: number) => void;
   onConjunctionAlert?: (predictions: ConjunctionPrediction[]) => void;
+  dangerThreshold?: number;
 }
 
 const PredictionControls: React.FC<PredictionControlsProps> = ({
   className,
   selectedSatellite,
   onTimeChange,
-  onConjunctionAlert
+  onConjunctionAlert,
+  dangerThreshold = 5.0
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [simulationSpeed, setSimulationSpeed] = useState(1);
   const [timeAhead, setTimeAhead] = useState(0);
   const [conjunctionPredictions, setConjunctionPredictions] = useState<ConjunctionPrediction[]>([]);
+  const [backendConjunctions, setBackendConjunctions] = useState<BackendConjunctionResult[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const maxHours = 168; // 7 days
@@ -51,6 +70,7 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
   // Clear predictions when satellite changes
   useEffect(() => {
     setConjunctionPredictions([]);
+    setBackendConjunctions([]);
     setAnalysisError(null);
     setTimeAhead(0);
     setIsPlaying(false);
@@ -90,53 +110,58 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
     }
   };
 
-  // Analyze conjunctions for selected satellite
+  // Convert backend conjunction results to display format
+  const convertBackendResults = (backendResults: BackendConjunctionResult[]): ConjunctionPrediction[] => {
+    return backendResults.map((result, index) => ({
+      id: `backend-${Date.now()}-${index}`,
+      primaryObject: selectedSatellite?.name || 'Selected Object',
+      secondaryObject: result.withName,
+      timeToConjunction: 0, // Will be calculated from result.time if needed
+      minimumDistance: result.closestDistance_km,
+      probability: result.probability,
+      riskLevel: result.closestDistance_km < 2 ? 'high' : result.closestDistance_km < 5 ? 'medium' : 'low'
+    }));
+  };
+
+  // Analyze conjunctions for selected satellite using backend API
   const analyzeConjunctions = async () => {
     if (!selectedSatellite) return;
 
     setIsAnalyzing(true);
     setAnalysisError(null);
+    setBackendConjunctions([]);
 
     try {
       console.log('Analyzing conjunctions for:', selectedSatellite.id, selectedSatellite.name);
       
-      // TODO: Replace with actual backend endpoint when available
-      // const response = await axios.post('http://localhost:5000/api/predict-conjunctions', {
-      //   objectId: selectedSatellite.id,
-      //   timeHorizon: maxHours,
-      //   minimumDistance: 5.0 // km
-      // });
+      const requestPayload = {
+        id: selectedSatellite.id,
+        type: selectedSatellite.type,
+        days: Math.ceil(maxHours / 24), // Convert hours to days
+        threshold_km: dangerThreshold
+      };
 
-      // Simulate backend response for now
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate API delay
+      console.log('Sending request to backend:', requestPayload);
+
+      const response = await axios.post<BackendResponse>('http://localhost:5000/api/simulate-conjunction', requestPayload);
       
-      const mockPredictions: ConjunctionPrediction[] = [
-        {
-          id: `conj-${Date.now()}-1`,
-          primaryObject: selectedSatellite.name,
-          secondaryObject: 'COSMOS 2251 DEB',
-          timeToConjunction: 24.5,
-          minimumDistance: 2.3,
-          probability: 0.15,
-          riskLevel: 'high'
-        },
-        {
-          id: `conj-${Date.now()}-2`,
-          primaryObject: selectedSatellite.name,
-          secondaryObject: 'Debris Fragment 12847',
-          timeToConjunction: 72.8,
-          minimumDistance: 4.7,
-          probability: 0.08,
-          riskLevel: 'medium'
-        }
-      ];
+      console.log('Backend response:', response.data);
 
-      setConjunctionPredictions(mockPredictions);
-      onConjunctionAlert?.(mockPredictions);
+      const { conjunctions } = response.data;
+      setBackendConjunctions(conjunctions);
+      
+      // Convert to legacy format for alerts
+      const convertedPredictions = convertBackendResults(conjunctions);
+      setConjunctionPredictions(convertedPredictions);
+      onConjunctionAlert?.(convertedPredictions);
       
     } catch (error) {
       console.error('Error analyzing conjunctions:', error);
-      setAnalysisError('Failed to analyze conjunctions');
+      if (axios.isAxiosError(error)) {
+        setAnalysisError(`Backend error: ${error.response?.data?.error || error.message}`);
+      } else {
+        setAnalysisError('Failed to analyze conjunctions');
+      }
     } finally {
       setIsAnalyzing(false);
     }
@@ -294,38 +319,47 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
           <div className="text-xs text-red-400 mb-2">{analysisError}</div>
         )}
 
-        {conjunctionPredictions.length > 0 && (
+        {backendConjunctions.length > 0 && (
           <div className="space-y-2">
             <div className="text-xs text-gray-400 mb-2">
-              {conjunctionPredictions.length} potential conjunction(s) found
+              {backendConjunctions.length} conjunction(s) found from backend
             </div>
-            {conjunctionPredictions.slice(0, 3).map((prediction) => (
+            {backendConjunctions.slice(0, 5).map((conjunction, index) => (
               <div 
-                key={prediction.id}
+                key={`${conjunction.withId}-${index}`}
                 className="p-2 bg-space-darker rounded border border-space-grid text-xs"
               >
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-white font-medium">
-                    vs {prediction.secondaryObject}
+                    vs {conjunction.withName}
                   </span>
                   <div className="flex items-center">
-                    <AlertTriangle className={cn("h-3 w-3 mr-1", getRiskColor(prediction.riskLevel))} />
-                    <span className={cn("text-xs", getRiskColor(prediction.riskLevel))}>
-                      {prediction.riskLevel.toUpperCase()}
+                    <AlertTriangle className={cn("h-3 w-3 mr-1", 
+                      conjunction.closestDistance_km < 2 ? 'text-red-400' :
+                      conjunction.closestDistance_km < 5 ? 'text-yellow-400' : 'text-green-400'
+                    )} />
+                    <span className={cn("text-xs",
+                      conjunction.closestDistance_km < 2 ? 'text-red-400' :
+                      conjunction.closestDistance_km < 5 ? 'text-yellow-400' : 'text-green-400'
+                    )}>
+                      {conjunction.closestDistance_km < 2 ? 'HIGH' :
+                       conjunction.closestDistance_km < 5 ? 'MEDIUM' : 'LOW'}
                     </span>
                   </div>
                 </div>
-                <div className="text-gray-400">
-                  In {formatTime(prediction.timeToConjunction)} • 
-                  {prediction.minimumDistance.toFixed(1)}km • 
-                  {(prediction.probability * 100).toFixed(1)}% risk
+                <div className="text-gray-400 space-y-1">
+                  <div>Distance: {conjunction.closestDistance_km.toFixed(2)}km</div>
+                  <div>Velocity: {conjunction.relativeVelocity_km_s.toFixed(2)}km/s</div>
+                  <div>Probability: {(conjunction.probability * 100).toFixed(2)}%</div>
+                  <div>Type: {conjunction.withType.toUpperCase()}</div>
+                  <div>Time: {conjunction.time}</div>
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {conjunctionPredictions.length === 0 && selectedSatellite && !isAnalyzing && (
+        {backendConjunctions.length === 0 && selectedSatellite && !isAnalyzing && (
           <div className="text-xs text-gray-400 text-center py-2">
             No conjunction analysis performed yet
           </div>
