@@ -36,9 +36,6 @@ celery.conf.beat_schedule = {
 }
 celery.conf.timezone = 'UTC'
 
-# celery -A app.celery worker --loglevel=info
-# celery -A app.celery beat --loglevel=info
-
 # Cache for satellite data
 satellite_cache = {
     'data': [],
@@ -477,6 +474,7 @@ def get_debris_details(debris_id):
 
 @app.route('/api/simulate-conjunction', methods=['POST'])
 def simulate_conjunction():
+<<<<<<< HEAD
     data = request.get_json()
     print(f'Obtained json : {data}')
     object_id = data.get('id')
@@ -578,6 +576,143 @@ def simulate_conjunction():
 
     return jsonify({"objectId": object_id, "objectType": object_type, "conjunctions": conjunctions})
 
+=======
+    """Simulate future conjunctions for a given space object"""
+    try:
+        data = request.get_json()
+        
+        # Extract parameters
+        object_id = data.get('id')
+        object_type = data.get('type')  # 'satellite' or 'debris'
+        days = data.get('days', 7)
+        threshold_km = data.get('threshold_km', 5.0)
+        
+        print(f"Conjunction simulation request: ID={object_id}, Type={object_type}, Days={days}, Threshold={threshold_km}km")
+        
+        if not object_id or not object_type:
+            return jsonify({"error": "Missing required parameters: id, type"}), 400
+        
+        # Determine which dataset to use based on object type
+        if object_type == 'satellite':
+            primary_file = 'cached_active.tle'
+            secondary_files = ['cached_active.tle', 'cached_debris.tle']
+        else:  # debris
+            primary_file = 'cached_debris.tle'
+            secondary_files = ['cached_active.tle', 'cached_debris.tle']
+        
+        # Find the primary object
+        primary_object = None
+        try:
+            with open(primary_file, 'r', encoding='utf-8') as f:
+                lines = f.read().strip().splitlines()
+                lines = [line for line in lines if line.strip()]
+            
+            target_index = int(object_id) * 3
+            if target_index + 2 < len(lines):
+                name = lines[target_index].strip()
+                line1 = lines[target_index + 1].strip()
+                line2 = lines[target_index + 2].strip()
+                primary_object = EarthSatellite(line1, line2, name, ts)
+                
+        except (FileNotFoundError, ValueError, IndexError) as e:
+            return jsonify({"error": f"Primary object not found: {e}"}), 404
+        
+        if not primary_object:
+            return jsonify({"error": "Primary object not found"}), 404
+        
+        # Simulate conjunctions
+        conjunctions = []
+        now = ts.now()
+        
+        # Check against all other objects
+        for secondary_file in secondary_files:
+            try:
+                with open(secondary_file, 'r', encoding='utf-8') as f:
+                    sec_lines = f.read().strip().splitlines()
+                    sec_lines = [line for line in sec_lines if line.strip()]
+                
+                for i in range(0, len(sec_lines), 3):
+                    try:
+                        if i + 2 >= len(sec_lines):
+                            continue
+                            
+                        sec_name = sec_lines[i].strip()
+                        sec_line1 = sec_lines[i + 1].strip()
+                        sec_line2 = sec_lines[i + 2].strip()
+                        
+                        # Skip if it's the same object
+                        if (secondary_file == primary_file and i == target_index):
+                            continue
+                        
+                        secondary_object = EarthSatellite(sec_line1, sec_line2, sec_name, ts)
+                        
+                        # Simulate multiple time steps over the given days
+                        for day_offset in range(1, days + 1):
+                            future_time = ts.utc(now.utc_datetime().replace(day=now.utc_datetime().day + day_offset))
+                            
+                            # Get positions at future time
+                            primary_pos = primary_object.at(future_time)
+                            secondary_pos = secondary_object.at(future_time)
+                            
+                            # Calculate distance
+                            distance_vector = primary_pos.position.km - secondary_pos.position.km
+                            distance = math.sqrt(sum(coord**2 for coord in distance_vector))
+                            
+                            # Check if within threshold
+                            if distance < threshold_km:
+                                # Calculate relative velocity
+                                primary_vel = primary_pos.velocity.km_per_s
+                                secondary_vel = secondary_pos.velocity.km_per_s
+                                rel_velocity = math.sqrt(sum((pv - sv)**2 for pv, sv in zip(primary_vel, secondary_vel)))
+                                
+                                # Calculate collision probability (simplified)
+                                # In reality, this would be much more complex
+                                base_prob = max(0, 1 - (distance / threshold_km))
+                                velocity_factor = min(1, rel_velocity / 10)  # Normalize by 10 km/s
+                                probability = base_prob * velocity_factor * 0.1  # Scale down for realism
+                                
+                                # Determine object type for secondary
+                                sec_type = 'satellite' if 'active' in secondary_file else 'debris'
+                                
+                                conjunctions.append({
+                                    "withId": str(i // 3),
+                                    "withName": sec_name,
+                                    "withType": sec_type,
+                                    "closestDistance_km": round(distance, 3),
+                                    "relativeVelocity_km_s": round(rel_velocity, 3),
+                                    "probability": round(probability, 4),
+                                    "time": future_time.utc_datetime().strftime("%Y-%m-%d %H:%M:%S UTC")
+                                })
+                                
+                                # Limit results to prevent overwhelming response
+                                if len(conjunctions) >= 20:
+                                    break
+                        
+                        if len(conjunctions) >= 20:
+                            break
+                            
+                    except Exception as e:
+                        continue
+                        
+            except FileNotFoundError:
+                continue
+        
+        # Sort by closest distance
+        conjunctions.sort(key=lambda x: x["closestDistance_km"])
+        
+        result = {
+            "objectId": object_id,
+            "objectType": object_type,
+            "conjunctions": conjunctions[:10]  # Return top 10 closest conjunctions
+        }
+        
+        print(f"Found {len(conjunctions)} conjunctions for {object_id}")
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"Error in conjunction simulation: {e}")
+        return jsonify({"error": f"Simulation failed: {str(e)}"}), 500
+>>>>>>> e9415a25c6bb2e441af9ce13702d344ebab98f3e
 
 
 if __name__ == '__main__':

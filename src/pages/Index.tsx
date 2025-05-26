@@ -373,6 +373,7 @@ const Index = () => {
                 selectedSatellite={selectedSatellite}
                 onTimeChange={handleTimeChange}
                 onConjunctionAlert={handleConjunctionAlert}
+                dangerThreshold={dangerThreshold}
               />
               
               <DangerThresholdControl
