@@ -395,8 +395,9 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
         const deltaX = currentPos.x - lastMousePos.current.x;
         const deltaY = currentPos.y - lastMousePos.current.y;
         
-        rotation.current.x += deltaY * 0.005;
-        rotation.current.y += deltaX * 0.005;
+        // Apply rotation based on mouse movement
+        rotation.current.x += deltaY * 2.0;
+        rotation.current.y += deltaX * 2.0;
       }
       
       lastMousePos.current = currentPos;
@@ -413,28 +414,28 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
       
-      // Get the world coordinates before zoom
-      const beforeZoomX = (mouseX - canvas.width / 2 - panOffset.current.x) / zoom.current;
-      const beforeZoomY = (mouseY - canvas.height / 2 - panOffset.current.y) / zoom.current;
+      // Calculate world position before zoom
+      const beforeZoomWorldX = (mouseX - canvas.width / 2 - panOffset.current.x) / zoom.current;
+      const beforeZoomWorldY = (mouseY - canvas.height / 2 - panOffset.current.y) / zoom.current;
       
       // Apply zoom
       const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
       const newZoom = zoom.current * zoomFactor;
-      zoom.current = Math.max(0.1, Math.min(newZoom, 5.0));
+      zoom.current = Math.max(0.1, Math.min(5.0, newZoom));
       
-      // Get the world coordinates after zoom
-      const afterZoomX = (mouseX - canvas.width / 2 - panOffset.current.x) / zoom.current;
-      const afterZoomY = (mouseY - canvas.height / 2 - panOffset.current.y) / zoom.current;
+      // Calculate world position after zoom
+      const afterZoomWorldX = (mouseX - canvas.width / 2 - panOffset.current.x) / zoom.current;
+      const afterZoomWorldY = (mouseY - canvas.height / 2 - panOffset.current.y) / zoom.current;
       
-      // Adjust pan to keep the cursor position consistent
-      panOffset.current.x += (afterZoomX - beforeZoomX) * zoom.current;
-      panOffset.current.y += (afterZoomY - beforeZoomY) * zoom.current;
+      // Adjust pan to keep mouse position consistent
+      panOffset.current.x += (afterZoomWorldX - beforeZoomWorldX) * zoom.current;
+      panOffset.current.y += (afterZoomWorldY - beforeZoomWorldY) * zoom.current;
     };
 
     canvas.addEventListener('click', handleCanvasClick);
     canvas.addEventListener('mousedown', handleMouseDown);
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('mouseup', handleMouseUp);
     canvas.addEventListener('wheel', handleWheel, { passive: false });
 
     animationRef.current = requestAnimationFrame(draw);
@@ -444,8 +445,8 @@ const DebrisSimulation3: React.FC<DebrisSimulation3Props> = ({
       window.removeEventListener('resize', updateCanvasSize);
       canvas.removeEventListener('click', handleCanvasClick);
       canvas.removeEventListener('mousedown', handleMouseDown);
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      canvas.removeEventListener('mousemove', handleMouseMove);
+      canvas.removeEventListener('mouseup', handleMouseUp);
       canvas.removeEventListener('wheel', handleWheel);
     };
   }, [satellites, selectedSatellite, onSelectSatellite, highlightedSatellite, filteredSatelliteId, showGridlines, showHeatmap]);

@@ -27,9 +27,16 @@ const StatusOverlay: React.FC<StatusOverlayProps> = ({
   highlightedSatellite,
   zoom
 }) => {
+  // Count satellites and debris separately
+  const satelliteCount = satellites.filter(obj => obj.type === 'satellite').length;
+  const debrisCount = satellites.filter(obj => obj.type === 'debris').length;
+  const totalCount = satellites.length;
+
   return (
     <div className="absolute bottom-4 left-4 bg-black/70 px-2 py-1 rounded text-xs text-white">
-      <div>📡 Satellites: {filteredSatelliteId ? '1 (filtered)' : satellites.length}</div>
+      <div>📡 Satellites: {filteredSatelliteId ? '1 (filtered)' : satelliteCount}</div>
+      <div>🗑️ Debris: {filteredSatelliteId ? (satellites.find(s => s.id === filteredSatelliteId)?.type === 'debris' ? '1 (filtered)' : '0 (filtered)') : debrisCount}</div>
+      <div>🌌 Total Objects: {filteredSatelliteId ? '1' : totalCount}</div>
       {highlightedSatellite && (
         <div>⭐ Highlighted: {satellites.find(s => s.id === highlightedSatellite)?.name || highlightedSatellite}</div>
       )}
