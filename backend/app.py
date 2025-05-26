@@ -1,10 +1,11 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from skyfield.api import load, EarthSatellite
 import requests
 from flask_cors import CORS
 from datetime import datetime
 import time
 import math
+from datetime import timedelta
 
 from celery import Celery
 from celery.schedules import crontab
@@ -472,6 +473,110 @@ def get_debris_details(debris_id):
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": f"Error processing debris: {e}"}), 500
+
+
+@app.route('/api/simulate-conjunction', methods=['POST'])
+def simulate_conjunction():
+    data = request.get_json()
+    print(f'Obtained json : {data}')
+    object_id = data.get('id')
+    object_type = data.get('type')
+    days = int(data.get('days', 7))  # Default to 7 days if not provided
+    threshold_km = float(data.get('threshold_km', 10.0))  # Default to 10 km
+
+    # Load appropriate TLE file
+    tle_file = 'cached_active.tle' if object_type == 'satellite' else 'cached_debris.tle'
+
+    try:
+        with open(tle_file, 'r', encoding='utf-8') as f:
+            lines = [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        return jsonify({"error": f"{tle_file} not found."}), 500
+
+    # Get selected object
+    idx = object_id * 3
+    try:
+        name = lines[idx]
+        line1 = lines[idx + 1]
+        line2 = lines[idx + 2]
+        print(f"TLE : {name}\n{line1}\n{line2}")
+        selected_sat = EarthSatellite(line1, line2, name, ts)
+    except Exception as e:
+        return jsonify({"error": f"Error loading selected object: {e}"}), 500
+
+    # Load all other satellites + debris
+    other_objects = []
+
+    def load_tle_file(filename, skip_id=None, skip_type=None):
+        try:
+            with open(filename, 'r', encoding='utf-8') as f:
+                lns = [line.strip() for line in f if line.strip()]
+            max_satellites = 20
+            for i in range(0, min(len(lns), max_satellites * 3), 3):
+                if filename == tle_file and i // 3 == skip_id and skip_type == object_type:
+                    continue  # Skip self
+                obj_name = lns[i]
+                l1 = lns[i + 1]
+                l2 = lns[i + 2]
+                obj_sat = EarthSatellite(l1, l2, obj_name, ts)
+                other_objects.append({
+                    "id": i // 3,
+                    "name": obj_name,
+                    "sat": obj_sat,
+                    "type": 'satellite' if filename == 'cached_active.tle' else 'debris'
+                })
+        except FileNotFoundError:
+            pass
+
+    load_tle_file('cached_active.tle', skip_id=object_id, skip_type=object_type)
+    print("----------Loaded satellites----------")
+    load_tle_file('cached_debris.tle')
+    print("----------Loaded Debris----------")
+
+    # Simulation setup
+    t0 = ts.now()
+    t1 = ts.now() + timedelta(days=days)
+    minutes_step = 10  # every 10 minutes
+
+    conjunctions = []
+
+    current_time = t0
+    iter = 0
+    while current_time < t1:
+        sel_pos = selected_sat.at(current_time).position.km
+
+        for obj in other_objects:
+            obj_pos = obj['sat'].at(current_time).position.km
+            distance = math.sqrt(sum((sel_pos[i] - obj_pos[i]) ** 2 for i in range(3)))
+            if distance < threshold_km:
+                # Relative velocity estimate
+                sel_vel = selected_sat.at(current_time).velocity.km_per_s
+                obj_vel = obj['sat'].at(current_time).velocity.km_per_s
+                rel_velocity = math.sqrt(sum((sel_vel[i] - obj_vel[i]) ** 2 for i in range(3)))
+
+                # Simple probability estimate (for now just inverse of distance, scaled)
+                probability = min(1.0, (threshold_km - distance) / threshold_km)
+
+                conjunctions.append({
+                    "withId": obj['id'],
+                    "withName": obj['name'],
+                    "withType": obj['type'],
+                    "closestDistance_km": distance,
+                    "relativeVelocity_km_s": rel_velocity,
+                    "probability": probability,
+                    "time": current_time.utc_iso()
+                })
+
+        current_time = current_time + timedelta(minutes=minutes_step)
+        #print(f"iter : {iter}")
+        iter=iter+1
+
+    # Optional: remove duplicates or merge closest approaches
+    # Sort by probability or time
+    conjunctions.sort(key=lambda x: (-x['probability'], x['time']))
+    print(f"Total conjunctions : {len(conjunctions)}")
+
+    return jsonify({"objectId": object_id, "objectType": object_type, "conjunctions": conjunctions})
 
 
 
