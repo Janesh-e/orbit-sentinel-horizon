@@ -65,6 +65,7 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
   const [backendConjunctions, setBackendConjunctions] = useState<BackendConjunctionResult[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisCompleted, setAnalysisCompleted] = useState(false);
   const maxHours = 168; // 7 days
 
   // Clear predictions when satellite changes
@@ -72,6 +73,7 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
     setConjunctionPredictions([]);
     setBackendConjunctions([]);
     setAnalysisError(null);
+    setAnalysisCompleted(false);
     setTimeAhead(0);
     setIsPlaying(false);
     onTimeChange(0);
@@ -129,13 +131,17 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
 
     setIsAnalyzing(true);
     setAnalysisError(null);
+    setAnalysisCompleted(false);
     setBackendConjunctions([]);
 
     try {
       console.log('Analyzing conjunctions for:', selectedSatellite.id, selectedSatellite.name);
       
+      // Convert string ID to integer for backend
+      const objectId = parseInt(selectedSatellite.id.replace(/\D/g, ''), 10) || 0;
+      
       const requestPayload = {
-        id: selectedSatellite.id,
+        id: objectId, // Send as integer
         type: selectedSatellite.type,
         days: Math.ceil(maxHours / 24), // Convert hours to days
         threshold_km: dangerThreshold
@@ -149,6 +155,7 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
 
       const { conjunctions } = response.data;
       setBackendConjunctions(conjunctions);
+      setAnalysisCompleted(true);
       
       // Convert to legacy format for alerts
       const convertedPredictions = convertBackendResults(conjunctions);
@@ -185,10 +192,15 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
     setSimulationSpeed(speed);
   };
 
-  // Handle slider change
+  // Handle slider change - fixed to prevent reset to 0
   const handleTimeSliderChange = (value: number[]) => {
-    setTimeAhead(value[0]);
-    onTimeChange(value[0]);
+    const newTime = value[0];
+    setTimeAhead(newTime);
+    onTimeChange(newTime);
+    // Stop auto-play when user manually changes time
+    if (isPlaying) {
+      setIsPlaying(false);
+    }
   };
 
   // Get risk level color
@@ -262,11 +274,10 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
           <span className="text-sm text-space-accent font-mono">{formatTime(timeAhead)}</span>
         </div>
         <Slider 
-          defaultValue={[0]} 
-          max={maxHours} 
-          step={1}
           value={[timeAhead]}
           onValueChange={handleTimeSliderChange}
+          max={maxHours} 
+          step={1}
           className="py-1"
           disabled={!selectedSatellite}
         />
@@ -319,10 +330,20 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
           <div className="text-xs text-red-400 mb-2">{analysisError}</div>
         )}
 
+        {/* Handle empty conjunction results */}
+        {analysisCompleted && backendConjunctions.length === 0 && (
+          <div className="p-3 bg-space-darker rounded border border-space-grid text-center">
+            <div className="text-sm text-gray-400 mb-1">No conjunctions found</div>
+            <div className="text-xs text-gray-500">
+              No potential conjunctions expected for {selectedSatellite?.name} within the selected timeframe ({Math.ceil(maxHours / 24)} days) and threshold ({dangerThreshold.toFixed(1)} km)
+            </div>
+          </div>
+        )}
+
         {backendConjunctions.length > 0 && (
           <div className="space-y-2">
             <div className="text-xs text-gray-400 mb-2">
-              {backendConjunctions.length} conjunction(s) found from backend
+              {backendConjunctions.length} conjunction(s) found
             </div>
             {backendConjunctions.slice(0, 5).map((conjunction, index) => (
               <div 
@@ -359,9 +380,9 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
           </div>
         )}
 
-        {backendConjunctions.length === 0 && selectedSatellite && !isAnalyzing && (
+        {!analysisCompleted && !isAnalyzing && selectedSatellite && (
           <div className="text-xs text-gray-400 text-center py-2">
-            No conjunction analysis performed yet
+            Click "Analyze" to check for potential conjunctions
           </div>
         )}
       </div>
