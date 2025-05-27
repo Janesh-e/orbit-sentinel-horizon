@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,8 +68,9 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
   const [analysisCompleted, setAnalysisCompleted] = useState(false);
   const maxHours = 168; // 7 days
 
-  // Clear predictions when satellite changes
+  // Clear predictions when satellite changes - but preserve analysis state
   useEffect(() => {
+    console.log('Satellite changed, clearing conjunction data');
     setConjunctionPredictions([]);
     setBackendConjunctions([]);
     setAnalysisError(null);
@@ -97,6 +99,11 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
 
     return () => clearInterval(interval);
   }, [isPlaying, simulationSpeed, selectedSatellite, onTimeChange]);
+
+  // Debug log whenever backendConjunctions or analysisCompleted changes
+  useEffect(() => {
+    console.log('State changed - backendConjunctions:', backendConjunctions.length, 'analysisCompleted:', analysisCompleted, 'isAnalyzing:', isAnalyzing);
+  }, [backendConjunctions, analysisCompleted, isAnalyzing]);
 
   // Format hours as days + hours
   const formatTime = (hours: number) => {
@@ -128,14 +135,13 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
   const analyzeConjunctions = async () => {
     if (!selectedSatellite) return;
 
+    console.log('Starting conjunction analysis for:', selectedSatellite.id, selectedSatellite.name);
     setIsAnalyzing(true);
     setAnalysisError(null);
     setAnalysisCompleted(false);
     setBackendConjunctions([]);
 
     try {
-      console.log('Analyzing conjunctions for:', selectedSatellite.id, selectedSatellite.name);
-      
       // Convert string ID to integer for backend
       const objectId = parseInt(selectedSatellite.id.replace(/\D/g, ''), 10) || 0;
       
@@ -150,17 +156,23 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
 
       const response = await axios.post<BackendResponse>('http://localhost:5000/api/simulate-conjunction', requestPayload);
       
-      console.log('Backend response:', response.data);
+      console.log('Backend response received:', response.data);
 
       const { conjunctions } = response.data;
-      console.log('Setting backend conjunctions:', conjunctions);
+      console.log('Processing conjunctions:', conjunctions);
+      
+      // Set backend conjunctions first
       setBackendConjunctions(conjunctions);
-      setAnalysisCompleted(true);
       
       // Convert to legacy format for alerts
       const convertedPredictions = convertBackendResults(conjunctions);
       setConjunctionPredictions(convertedPredictions);
       onConjunctionAlert?.(convertedPredictions);
+      
+      // Mark analysis as completed AFTER setting the data
+      setAnalysisCompleted(true);
+      
+      console.log('Analysis completed successfully. Results set:', conjunctions.length, 'conjunctions');
       
     } catch (error) {
       console.error('Error analyzing conjunctions:', error);
@@ -169,6 +181,7 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
       } else {
         setAnalysisError('Failed to analyze conjunctions');
       }
+      setAnalysisCompleted(true); // Mark as completed even on error
     } finally {
       setIsAnalyzing(false);
     }
@@ -192,7 +205,7 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
     setSimulationSpeed(speed);
   };
 
-  // Handle slider change - fixed to prevent reset to 0
+  // Handle slider change
   const handleTimeSliderChange = (value: number[]) => {
     const newTime = value[0];
     setTimeAhead(newTime);
@@ -216,8 +229,6 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
     if (distance < 5) return 'MEDIUM';
     return 'LOW';
   };
-
-  console.log('Current state - backendConjunctions:', backendConjunctions, 'analysisCompleted:', analysisCompleted);
 
   return (
     <div className={cn("p-4 space-card", className)}>
@@ -343,10 +354,9 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
           </div>
         )}
 
-        {/* Show results only after analysis is completed */}
+        {/* Show results - only when analysis is completed and not analyzing */}
         {analysisCompleted && !isAnalyzing && (
-          <>
-            {/* Handle empty conjunction results */}
+          <div>
             {backendConjunctions.length === 0 ? (
               <div className="p-3 bg-space-darker rounded border border-space-grid text-center">
                 <div className="text-sm text-gray-400 mb-1">No conjunctions found</div>
@@ -355,7 +365,6 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
                 </div>
               </div>
             ) : (
-              /* Display conjunction results */
               <div className="space-y-3">
                 <div className="text-xs text-gray-400 mb-2">
                   {backendConjunctions.length} conjunction(s) found
@@ -424,7 +433,7 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
                 </div>
               </div>
             )}
-          </>
+          </div>
         )}
 
         {/* Show instruction when no analysis has been run yet */}
