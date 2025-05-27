@@ -66,19 +66,23 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisCompleted, setAnalysisCompleted] = useState(false);
+  const [currentSatelliteId, setCurrentSatelliteId] = useState<string | null>(null);
   const maxHours = 168; // 7 days
 
-  // Clear predictions when satellite changes - but preserve analysis state
+  // Clear predictions when satellite changes - but preserve analysis state for same satellite
   useEffect(() => {
-    console.log('Satellite changed, clearing conjunction data');
-    setConjunctionPredictions([]);
-    setBackendConjunctions([]);
-    setAnalysisError(null);
-    setAnalysisCompleted(false);
-    setTimeAhead(0);
-    setIsPlaying(false);
-    onTimeChange(0);
-  }, [selectedSatellite?.id, onTimeChange]);
+    if (selectedSatellite?.id !== currentSatelliteId) {
+      console.log('Satellite changed from', currentSatelliteId, 'to', selectedSatellite?.id, '- clearing conjunction data');
+      setConjunctionPredictions([]);
+      setBackendConjunctions([]);
+      setAnalysisError(null);
+      setAnalysisCompleted(false);
+      setTimeAhead(0);
+      setIsPlaying(false);
+      setCurrentSatelliteId(selectedSatellite?.id || null);
+      onTimeChange(0);
+    }
+  }, [selectedSatellite?.id, currentSatelliteId, onTimeChange]);
 
   // Auto-play functionality
   useEffect(() => {
@@ -100,10 +104,17 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
     return () => clearInterval(interval);
   }, [isPlaying, simulationSpeed, selectedSatellite, onTimeChange]);
 
-  // Debug log whenever backendConjunctions or analysisCompleted changes
+  // Debug log for conjunction data
   useEffect(() => {
-    console.log('State changed - backendConjunctions:', backendConjunctions.length, 'analysisCompleted:', analysisCompleted, 'isAnalyzing:', isAnalyzing);
-  }, [backendConjunctions, analysisCompleted, isAnalyzing]);
+    console.log('Conjunction state update:', {
+      backendConjunctionsCount: backendConjunctions.length,
+      analysisCompleted,
+      isAnalyzing,
+      analysisError,
+      currentSatelliteId,
+      selectedSatelliteId: selectedSatellite?.id
+    });
+  }, [backendConjunctions, analysisCompleted, isAnalyzing, analysisError, currentSatelliteId, selectedSatellite?.id]);
 
   // Format hours as days + hours
   const formatTime = (hours: number) => {
@@ -133,13 +144,15 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
 
   // Analyze conjunctions for selected satellite using backend API
   const analyzeConjunctions = async () => {
-    if (!selectedSatellite) return;
+    if (!selectedSatellite) {
+      console.log('No satellite selected for analysis');
+      return;
+    }
 
     console.log('Starting conjunction analysis for:', selectedSatellite.id, selectedSatellite.name);
     setIsAnalyzing(true);
     setAnalysisError(null);
     setAnalysisCompleted(false);
-    setBackendConjunctions([]);
 
     try {
       // Convert string ID to integer for backend
@@ -161,26 +174,24 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
       const { conjunctions } = response.data;
       console.log('Processing conjunctions:', conjunctions);
       
-      // Set backend conjunctions first
+      // Set all state at once to prevent race conditions
       setBackendConjunctions(conjunctions);
+      setAnalysisCompleted(true);
       
       // Convert to legacy format for alerts
       const convertedPredictions = convertBackendResults(conjunctions);
       setConjunctionPredictions(convertedPredictions);
       onConjunctionAlert?.(convertedPredictions);
       
-      // Mark analysis as completed AFTER setting the data
-      setAnalysisCompleted(true);
-      
       console.log('Analysis completed successfully. Results set:', conjunctions.length, 'conjunctions');
       
     } catch (error) {
       console.error('Error analyzing conjunctions:', error);
-      if (axios.isAxiosError(error)) {
-        setAnalysisError(`Backend error: ${error.response?.data?.error || error.message}`);
-      } else {
-        setAnalysisError('Failed to analyze conjunctions');
-      }
+      setAnalysisError(
+        axios.isAxiosError(error) 
+          ? `Backend error: ${error.response?.data?.error || error.message}`
+          : 'Failed to analyze conjunctions'
+      );
       setAnalysisCompleted(true); // Mark as completed even on error
     } finally {
       setIsAnalyzing(false);
@@ -343,20 +354,21 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
           </Button>
         </div>
 
+        {/* Error Display */}
         {analysisError && (
           <div className="text-xs text-red-400 mb-2">{analysisError}</div>
         )}
 
-        {/* Show loading state */}
+        {/* Loading State */}
         {isAnalyzing && (
           <div className="p-3 bg-space-darker rounded border border-space-grid text-center">
             <div className="text-sm text-gray-400">Analyzing potential conjunctions...</div>
           </div>
         )}
 
-        {/* Show results - only when analysis is completed and not analyzing */}
+        {/* Results Display - Fixed conditional rendering */}
         {analysisCompleted && !isAnalyzing && (
-          <div>
+          <div className="space-y-3">
             {backendConjunctions.length === 0 ? (
               <div className="p-3 bg-space-darker rounded border border-space-grid text-center">
                 <div className="text-sm text-gray-400 mb-1">No conjunctions found</div>
@@ -365,7 +377,7 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="space-y-3">
+              <>
                 <div className="text-xs text-gray-400 mb-2">
                   {backendConjunctions.length} conjunction(s) found
                 </div>
@@ -377,7 +389,7 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
                     
                     return (
                       <div
-                        key={`${conjunction.withId}-${index}`}
+                        key={`${conjunction.withId}-${index}-${selectedSatellite?.id}`}
                         className="p-3 bg-space-darker border border-space-grid rounded-md"
                       >
                         <div className="flex justify-between items-start mb-2">
@@ -431,12 +443,12 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
                     );
                   })}
                 </div>
-              </div>
+              </>
             )}
           </div>
         )}
 
-        {/* Show instruction when no analysis has been run yet */}
+        {/* Instruction when no analysis has been run */}
         {!analysisCompleted && !isAnalyzing && selectedSatellite && (
           <div className="text-xs text-gray-400 text-center py-2">
             Click "Analyze" to check for potential conjunctions
