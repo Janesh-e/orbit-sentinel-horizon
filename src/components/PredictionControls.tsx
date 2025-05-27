@@ -153,6 +153,7 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
       console.log('Backend response:', response.data);
 
       const { conjunctions } = response.data;
+      console.log('Setting backend conjunctions:', conjunctions);
       setBackendConjunctions(conjunctions);
       setAnalysisCompleted(true);
       
@@ -215,6 +216,8 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
     if (distance < 5) return 'MEDIUM';
     return 'LOW';
   };
+
+  console.log('Current state - backendConjunctions:', backendConjunctions, 'analysisCompleted:', analysisCompleted);
 
   return (
     <div className={cn("p-4 space-card", className)}>
@@ -333,87 +336,98 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
           <div className="text-xs text-red-400 mb-2">{analysisError}</div>
         )}
 
-        {/* Handle empty conjunction results */}
-        {analysisCompleted && backendConjunctions.length === 0 && (
+        {/* Show loading state */}
+        {isAnalyzing && (
           <div className="p-3 bg-space-darker rounded border border-space-grid text-center">
-            <div className="text-sm text-gray-400 mb-1">No conjunctions found</div>
-            <div className="text-xs text-gray-500">
-              No potential conjunctions expected for {selectedSatellite?.name} within the selected timeframe ({Math.ceil(maxHours / 24)} days) and threshold ({dangerThreshold.toFixed(1)} km)
-            </div>
+            <div className="text-sm text-gray-400">Analyzing potential conjunctions...</div>
           </div>
         )}
 
-        {/* Display conjunction results */}
-        {backendConjunctions.length > 0 && (
-          <div className="space-y-3">
-            <div className="text-xs text-gray-400 mb-2">
-              {backendConjunctions.length} conjunction(s) found
-            </div>
-            <div className="max-h-[300px] overflow-y-auto pr-1 space-y-3">
-              {backendConjunctions.map((conjunction, index) => {
-                const riskLevel = getRiskLevel(conjunction.closestDistance_km);
-                const riskColor = getRiskColor(conjunction.closestDistance_km);
-                const isHighRisk = conjunction.closestDistance_km < 2;
-                
-                return (
-                  <div
-                    key={`${conjunction.withId}-${index}`}
-                    className="p-3 bg-space-darker border border-space-grid rounded-md"
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <p className="text-sm font-medium text-white flex items-center">
-                          Conjunction Event
-                          {isHighRisk && <AlertTriangle className="ml-1 h-3 w-3 text-red-400" />}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          With: {conjunction.withName} ({conjunction.withType.toUpperCase()})
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <div className="flex items-center">
-                          <AlertTriangle className={cn("h-3 w-3 mr-1", riskColor)} />
-                          <span className={cn("text-xs font-medium", riskColor)}>
-                            {riskLevel}
-                          </span>
+        {/* Show results only after analysis is completed */}
+        {analysisCompleted && !isAnalyzing && (
+          <>
+            {/* Handle empty conjunction results */}
+            {backendConjunctions.length === 0 ? (
+              <div className="p-3 bg-space-darker rounded border border-space-grid text-center">
+                <div className="text-sm text-gray-400 mb-1">No conjunctions found</div>
+                <div className="text-xs text-gray-500">
+                  No potential conjunctions expected for {selectedSatellite?.name} within the selected timeframe ({Math.ceil(maxHours / 24)} days) and threshold ({dangerThreshold.toFixed(1)} km)
+                </div>
+              </div>
+            ) : (
+              /* Display conjunction results */
+              <div className="space-y-3">
+                <div className="text-xs text-gray-400 mb-2">
+                  {backendConjunctions.length} conjunction(s) found
+                </div>
+                <div className="max-h-[300px] overflow-y-auto pr-1 space-y-3">
+                  {backendConjunctions.map((conjunction, index) => {
+                    const riskLevel = getRiskLevel(conjunction.closestDistance_km);
+                    const riskColor = getRiskColor(conjunction.closestDistance_km);
+                    const isHighRisk = conjunction.closestDistance_km < 2;
+                    
+                    return (
+                      <div
+                        key={`${conjunction.withId}-${index}`}
+                        className="p-3 bg-space-darker border border-space-grid rounded-md"
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <p className="text-sm font-medium text-white flex items-center">
+                              Conjunction Event
+                              {isHighRisk && <AlertTriangle className="ml-1 h-3 w-3 text-red-400" />}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              With: {conjunction.withName} ({conjunction.withType.toUpperCase()})
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <div className="flex items-center">
+                              <AlertTriangle className={cn("h-3 w-3 mr-1", riskColor)} />
+                              <span className={cn("text-xs font-medium", riskColor)}>
+                                {riskLevel}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1">
+                              ID: {conjunction.withId}
+                            </p>
+                          </div>
                         </div>
-                        <p className="text-xs text-gray-400 mt-1">
-                          ID: {conjunction.withId}
-                        </p>
+                        
+                        <div className="grid grid-cols-3 gap-2 mt-3">
+                          <div>
+                            <p className="text-xs text-gray-400">Distance</p>
+                            <p className="text-sm text-white">{conjunction.closestDistance_km.toFixed(2)} km</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400">Probability</p>
+                            <p className={cn(
+                              "text-sm",
+                              conjunction.probability > 0.01 ? "text-red-400" : "text-white"
+                            )}>
+                              {(conjunction.probability * 100).toFixed(4)}%
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-400">Velocity</p>
+                            <p className="text-sm text-white">{conjunction.relativeVelocity_km_s.toFixed(2)} km/s</p>
+                          </div>
+                        </div>
+                        
+                        <div className="mt-2 pt-2 border-t border-space-grid">
+                          <p className="text-xs text-gray-400">Expected Time</p>
+                          <p className="text-sm text-white">{conjunction.time}</p>
+                        </div>
                       </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-3 gap-2 mt-3">
-                      <div>
-                        <p className="text-xs text-gray-400">Distance</p>
-                        <p className="text-sm text-white">{conjunction.closestDistance_km.toFixed(2)} km</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Probability</p>
-                        <p className={cn(
-                          "text-sm",
-                          conjunction.probability > 0.01 ? "text-red-400" : "text-white"
-                        )}>
-                          {(conjunction.probability * 100).toFixed(4)}%
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Velocity</p>
-                        <p className="text-sm text-white">{conjunction.relativeVelocity_km_s.toFixed(2)} km/s</p>
-                      </div>
-                    </div>
-                    
-                    <div className="mt-2 pt-2 border-t border-space-grid">
-                      <p className="text-xs text-gray-400">Expected Time</p>
-                      <p className="text-sm text-white">{conjunction.time}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </>
         )}
 
+        {/* Show instruction when no analysis has been run yet */}
         {!analysisCompleted && !isAnalyzing && selectedSatellite && (
           <div className="text-xs text-gray-400 text-center py-2">
             Click "Analyze" to check for potential conjunctions
