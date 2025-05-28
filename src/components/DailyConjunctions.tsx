@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, AlertTriangle, Clock, Zap, Target, Info } from 'lucide-react';
+import { Calendar, AlertTriangle, Clock, Zap, Target, Info, Satellite, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -62,9 +62,13 @@ const DailyConjunctions = () => {
     return { level: 'low', color: 'bg-green-500', textColor: 'text-green-100' };
   };
 
-  const formatTime = (timeStr: string) => {
+  const getObjectIcon = (type: string) => {
+    return type === 'satellite' ? Satellite : Trash2;
+  };
+
+  const formatDateTime = (timeStr: string) => {
     try {
-      return format(new Date(timeStr), 'HH:mm:ss');
+      return format(new Date(timeStr), 'MMM dd, yyyy HH:mm:ss');
     } catch {
       return timeStr;
     }
@@ -136,14 +140,23 @@ const DailyConjunctions = () => {
         <div className="space-y-3 max-h-80 overflow-y-auto">
           {conjunctions.map((conjunction) => {
             const risk = getRiskLevel(conjunction.probability);
+            const Object1Icon = getObjectIcon(conjunction.object1_type);
+            const Object2Icon = getObjectIcon(conjunction.object2_type);
+            
             return (
               <Card key={conjunction.id} className="bg-space-dark border-space-grid hover:border-space-accent/50 transition-colors">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-sm font-medium text-white flex items-center space-x-2">
-                      <span className="text-space-accent">{conjunction.object1_name}</span>
+                      <div className="flex items-center space-x-1">
+                        <Object1Icon className="h-3 w-3 text-space-accent" />
+                        <span className="text-space-accent">{conjunction.object1_name}</span>
+                      </div>
                       <Zap className="h-3 w-3 text-orange-400" />
-                      <span className="text-space-accent">{conjunction.object2_name}</span>
+                      <div className="flex items-center space-x-1">
+                        <Object2Icon className="h-3 w-3 text-space-accent" />
+                        <span className="text-space-accent">{conjunction.object2_name}</span>
+                      </div>
                     </CardTitle>
                     <Badge className={`${risk.color} ${risk.textColor} text-xs`}>
                       {(conjunction.probability * 100).toFixed(1)}% risk
@@ -162,11 +175,19 @@ const DailyConjunctions = () => {
                         <Zap className="h-3 w-3" />
                         <span>Rel. Velocity: {conjunction.relative_velocity_km_s.toFixed(2)} km/s</span>
                       </div>
+                      <div className="flex items-center space-x-1">
+                        <Object1Icon className="h-3 w-3" />
+                        <span>{conjunction.object1_name}: {conjunction.object1_velocity_km_s.toFixed(2)} km/s</span>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <Object2Icon className="h-3 w-3" />
+                        <span>{conjunction.object2_name}: {conjunction.object2_velocity_km_s.toFixed(2)} km/s</span>
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <div className="flex items-center space-x-1">
                         <Clock className="h-3 w-3" />
-                        <span>Time: {formatTime(conjunction.conjunction_time)}</span>
+                        <span>Conjunction: {formatDateTime(conjunction.conjunction_time)}</span>
                       </div>
                       <div className="flex items-center space-x-1">
                         <span className="text-gray-400">Zone: {conjunction.orbit_zone}</span>
@@ -176,7 +197,7 @@ const DailyConjunctions = () => {
                   
                   <div className="flex items-center justify-between">
                     <div className="text-xs text-gray-500">
-                      Detected: {formatDate(conjunction.detected_at)}
+                      Detected: {formatDateTime(conjunction.detected_at)}
                     </div>
                     
                     <Dialog>
@@ -195,12 +216,19 @@ const DailyConjunctions = () => {
                         <div className="space-y-3 text-sm">
                           <div className="bg-space-light p-3 rounded-lg">
                             <h4 className="font-medium mb-2">Conjunction Details:</h4>
-                            <p className="text-gray-300">
-                              {conjunction.object1_name} ({conjunction.object1_type}) and {conjunction.object2_name} ({conjunction.object2_type})
-                            </p>
-                            <p className="text-gray-300 mt-1">
-                              Risk Level: <span className={risk.textColor}>{risk.level.toUpperCase()}</span>
-                            </p>
+                            <div className="text-gray-300 space-y-1">
+                              <p className="flex items-center space-x-1">
+                                <Object1Icon className="h-3 w-3" />
+                                <span>{conjunction.object1_name} ({conjunction.object1_type})</span>
+                              </p>
+                              <p className="flex items-center space-x-1">
+                                <Object2Icon className="h-3 w-3" />
+                                <span>{conjunction.object2_name} ({conjunction.object2_type})</span>
+                              </p>
+                              <p className="mt-1">
+                                Risk Level: <span className={risk.textColor}>{risk.level.toUpperCase()}</span>
+                              </p>
+                            </div>
                           </div>
                           
                           <div className="bg-space-light p-3 rounded-lg">
