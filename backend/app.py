@@ -626,11 +626,12 @@ def get_conjunctions_by_date():
                 "detected_at": conj.detected_at.isoformat(),
                 "closest_distance_km": conj.closest_distance_km,
                 "conjunction_time": conj.conjunction_time.isoformat(),
-                "object1_velocity_kms": conj.object1_velocity_kms,
-                "object2_velocity_kms": conj.object2_velocity_kms,
-                "relative_velocity_kms": conj.relative_velocity_kms,
+                "object1_velocity_km_s": conj.object1_velocity_km_s,
+                "object2_velocity_km_s": conj.object2_velocity_km_s,
+                "relative_velocity_km_s": conj.relative_velocity_km_s,
                 "probability": conj.probability,
-                "additional_info": conj.additional_info  # if you have any extra fields
+                "orbit_zone": conj.orbit_zone,
+                "notes": conj.notes
             })
 
         return jsonify(result), 200
