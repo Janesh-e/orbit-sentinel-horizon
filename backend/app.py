@@ -595,6 +595,51 @@ def simulate_conjunction():
     return jsonify({"objectId": object_id, "objectType": object_type, "conjunctions": conjunctions})
 
 
+@app.route('/api/daily_conjunctions', methods=['GET'])
+def get_conjunctions_by_date():
+    # Get date from query param (e.g., /api/conjunctions?date=2025-05-28)
+    date_str = request.args.get('date')
+
+    if date_str:
+        try:
+            target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
+    else:
+        target_date = datetime.utcnow().date()
+
+    try:
+        conjunctions = Conjunction.query.filter(
+            db.func.date(Conjunction.detected_at) == target_date
+        ).all()
+
+        result = []
+        for conj in conjunctions:
+            result.append({
+                "id": conj.id,
+                "object1_id": conj.object1_id,
+                "object1_name": conj.object1_name,
+                "object1_type": conj.object1_type,
+                "object2_id": conj.object2_id,
+                "object2_name": conj.object2_name,
+                "object2_type": conj.object2_type,
+                "detected_at": conj.detected_at.isoformat(),
+                "closest_distance_km": conj.closest_distance_km,
+                "conjunction_time": conj.conjunction_time.isoformat(),
+                "object1_velocity_kms": conj.object1_velocity_kms,
+                "object2_velocity_kms": conj.object2_velocity_kms,
+                "relative_velocity_kms": conj.relative_velocity_kms,
+                "probability": conj.probability,
+                "additional_info": conj.additional_info  # if you have any extra fields
+            })
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to retrieve conjunctions: {str(e)}"}), 500
+
+
+
 
 if __name__ == '__main__':
     create_database()
