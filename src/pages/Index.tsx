@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import Navbar from '@/components/Navbar';
 import DebrisSimulation from '@/components/DebrisSimulation';
@@ -8,6 +9,7 @@ import SatelliteDetails from '@/components/SatelliteDetails';
 import PredictionControls from '@/components/PredictionControls';
 import AlertsLog, { Alert } from '@/components/AlertsLog';
 import DangerThresholdControl from '@/components/DangerThresholdControl';
+import DailyConjunctions from '@/components/DailyConjunctions';
 import { SatelliteData, ConjunctionEvent, generateInitialData, satelliteStats } from '@/utils/satelliteData';
 import { Switch } from '@/components/ui/switch';
 import axios from 'axios';
@@ -380,6 +382,10 @@ const Index = () => {
                 value={dangerThreshold}
                 onChange={handleThresholdChange}
               />
+            </div>
+            
+            <div className="lg:col-span-3">
+              <DailyConjunctions />
             </div>
             
             <div className="lg:col-span-3">
