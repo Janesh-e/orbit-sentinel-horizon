@@ -1,4 +1,6 @@
 from flask import Flask, jsonify, request
+from flask_sqlalchemy import SQLAlchemy
+from models import db, Conjunction
 from skyfield.api import load, EarthSatellite
 import requests
 from flask_cors import CORS
@@ -24,6 +26,19 @@ celery = make_celery(app)
 CORS(app)
 ts = load.timescale()
 
+# Configure the database URI
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///conjunctions.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Initialize the SQLAlchemy object
+db.init_app(app)
+
+def create_database():
+    with app.app_context():
+        db.create_all()
+        print("✅ Database and tables created (if they didn't exist)")
+
+
 celery.conf.beat_schedule = {
     'fetch-tle-every-6-hours': {
         'task': 'celery_tasks.fetch_tle_satellite',
@@ -32,6 +47,10 @@ celery.conf.beat_schedule = {
     'fetch-iridium-debris-every-6-hours': {
         'task': 'celery_tasks.fetch_tle_debris',
         'schedule': crontab(minute=0, hour='*/6'),  # every 6 hours
+    },
+    'detect-conjunctions-every-12-hours': {
+        'task': 'tasks.detect_global_conjunctions',
+        'schedule': crontab(minute=0, hour='*/12'),  # every 12 hours
     },
 }
 celery.conf.timezone = 'UTC'
@@ -578,4 +597,5 @@ def simulate_conjunction():
 
 
 if __name__ == '__main__':
+    create_database()
     app.run(debug=True)
