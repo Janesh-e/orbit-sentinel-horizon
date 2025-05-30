@@ -251,7 +251,7 @@ def get_orbital_elements():
             continue
 
     # Sort by orbit type and risk for better visualization
-    orbital_data.sort(key=lambda x: (x["orbitType"], -x["riskFactor"] if x["riskFactor"] else 0))
+    # orbital_data.sort(key=lambda x: (x["orbitType"], -x["riskFactor"] if x["riskFactor"] else 0))
     
     return jsonify(orbital_data[:100])  # Limit to prevent performance issues
 
