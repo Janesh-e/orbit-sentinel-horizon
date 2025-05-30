@@ -10,6 +10,7 @@ import PredictionControls from '@/components/PredictionControls';
 import AlertsLog, { Alert } from '@/components/AlertsLog';
 import DangerThresholdControl from '@/components/DangerThresholdControl';
 import DailyConjunctions from '@/components/DailyConjunctions';
+import SpaceTrafficGraph from '@/components/SpaceTrafficGraph';
 import { SatelliteData, ConjunctionEvent, generateInitialData, satelliteStats } from '@/utils/satelliteData';
 import { Switch } from '@/components/ui/switch';
 import axios from 'axios';
@@ -386,6 +387,10 @@ const Index = () => {
             
             <div className="lg:col-span-3">
               <DailyConjunctions />
+            </div>
+            
+            <div className="lg:col-span-3">
+              <SpaceTrafficGraph />
             </div>
             
             <div className="lg:col-span-3">
