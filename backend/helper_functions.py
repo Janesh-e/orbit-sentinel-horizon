@@ -1,10 +1,11 @@
-from skyfield.api import load, EarthSatellite
+from skyfield.api import load, EarthSatellite, utc
 
 import math
+import numpy as np
 from datetime import datetime, timedelta
 from skyfield.api import load, EarthSatellite
-from app import db  # Replace with your app context
-from models import Conjunction  # Replace with your model import
+from app import db  
+from models import Conjunction, ManeuverPlan 
 
 ts = load.timescale()
 
@@ -23,9 +24,32 @@ def load_tle_objects(tle_file, limit=20):
             'id': i // 3,
             'name': name,
             'sat': sat,
-            'type': 'satellite' if 'active' in tle_file else 'debris'
+            'type': 'satellite' if 'active' in tle_file else 'debris',
+            'satnum': sat.model.satnum,
         })
     return objects
+
+def load_tle_by_id(object_satnum, object_type):
+    tle_file = 'cached_active.tle' if object_type.lower() == 'satellite' else 'cached_debris.tle'
+
+    with open(tle_file, 'r', encoding='utf-8') as f:
+        lines = f.read().strip().splitlines()
+        lines = [line for line in lines if line.strip()]
+
+    for i in range(0, len(lines), 3):
+        if i + 2 >= len(lines):
+            continue  # skip incomplete TLE blocks
+
+        name = lines[i].strip()
+        line1 = lines[i + 1].strip()
+        line2 = lines[i + 2].strip()
+
+        satellite = EarthSatellite(line1, line2, name)
+        
+        if str(satellite.model.satnum) == str(object_satnum):
+            return satellite
+
+    raise ValueError(f"TLE for object ID {object_satnum} not found in {tle_file}")
 
 def simulate_closest_approach(obj1, obj2, start_time, end_time, time_step_minutes=10):
     min_dist = float('inf')
@@ -94,9 +118,11 @@ def store_conjunction(obj1, obj2, min_dist, conj_time, min_v1, min_v2, min_rel_v
         object1_id=obj1['id'],
         object1_name=obj1['name'],
         object1_type=obj1['type'],
+        object1_satnum=obj1['satnum'],
         object2_id=obj2['id'],
         object2_name=obj2['name'],
         object2_type=obj2['type'],
+        object2_satnum=obj2['satnum'],
         detected_at=datetime.utcnow(),
         conjunction_time=conj_time,
         closest_distance_km=min_dist,
@@ -129,3 +155,69 @@ def detect_global_conjunctions():
                 store_conjunction(obj1, obj2, min_dist, conj_time, min_v1, min_v2, min_rel_vel)
 
     db.session.commit()
+
+
+def compute_maneuver_for_conjunction(conjunction):
+    ts = load.timescale()
+    conj_time = ts.from_datetime(conjunction.conjunction_time.replace(tzinfo=utc))
+
+    # Load TLEs
+    try:
+        sat1 = load_tle_by_id(conjunction.object1_satnum, conjunction.object1_type)
+        sat2 = load_tle_by_id(conjunction.object2_satnum, conjunction.object2_type)
+    except ValueError as e:
+        print(e)
+        return None
+
+    # Get positions and velocities (km, km/s)
+    geocentric1 = sat1.at(conj_time)
+    geocentric2 = sat2.at(conj_time)
+
+    pos1 = geocentric1.position.km
+    vel1 = geocentric1.velocity.km_per_s
+    pos2 = geocentric2.position.km
+    vel2 = geocentric2.velocity.km_per_s
+
+    rel_pos_vec = np.subtract(pos1, pos2)
+    rel_vel_vec = np.subtract(vel1, vel2)
+
+    rel_pos = np.linalg.norm(rel_pos_vec)
+    rel_vel = np.linalg.norm(rel_vel_vec)
+
+    print(f"Relative position at conjunction: {rel_pos:.3f} km")
+    print(f"Relative velocity at conjunction: {rel_vel:.3f} km/s")
+
+    # Decide which object to maneuver
+    maneuver_object_id = conjunction.object1_id if conjunction.object1_type.lower() == 'satellite' else conjunction.object2_id
+
+    # Minimal displacement (safety margin: +500 m)
+    minimal_displacement_km = conjunction.closest_distance_km + 0.5
+    required_delta_v_km_s = minimal_displacement_km / (rel_vel + 1e-6)  # avoid div by zero
+
+    # Clamp to operational limits: convert to m/s
+    required_delta_v_m_s = max(0.01, min(required_delta_v_km_s * 1000, 5.0))
+
+    # Estimate fuel cost (rough): ~0.05 kg per 0.1 m/s
+    fuel_cost_kg = required_delta_v_m_s * 0.5
+
+    # Assume 95% risk reduction if maneuver succeeds
+    risk_reduction_percent = 95.0
+
+    # Earliest execution time: 2 hours from now
+    execution_time = datetime.utcnow() + timedelta(hours=2)
+
+    # Create maneuver plan record
+    plan = ManeuverPlan(
+        conjunction_id=conjunction.id,
+        object_id=maneuver_object_id,
+        maneuver_type='along-track',
+        delta_v=required_delta_v_m_s,
+        execution_time=execution_time,
+        expected_miss_distance=conjunction.closest_distance_km + 1.0,  # +1 km safety
+        fuel_cost=fuel_cost_kg,
+        risk_reduction=risk_reduction_percent
+    )
+
+    print(f"Generated maneuver plan: Δv={required_delta_v_m_s:.3f} m/s, fuel={fuel_cost_kg:.3f} kg")
+
+    return plan

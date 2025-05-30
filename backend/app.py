@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
-from models import db, Conjunction
+from models import db, Conjunction, ManeuverPlan
 from skyfield.api import load, EarthSatellite
 import requests
 from flask_cors import CORS
@@ -639,7 +639,25 @@ def get_conjunctions_by_date():
     except Exception as e:
         return jsonify({"error": f"Failed to retrieve conjunctions: {str(e)}"}), 500
 
+@app.route('/api/maneuver/<int:conjunction_id>', methods=['GET'])
+def get_maneuver_by_conjunction(conjunction_id):
+    maneuver = ManeuverPlan.query.filter_by(conjunction_id=conjunction_id).first()
 
+    if not maneuver:
+        return jsonify({'error': f'No maneuver plan found for conjunction ID {conjunction_id}'}), 404
+
+    maneuver_data = {
+        'conjunction_id': maneuver.conjunction_id,
+        'object_id': maneuver.object_id,
+        'maneuver_type': maneuver.maneuver_type,
+        'delta_v_m_s': maneuver.delta_v,
+        'execution_time': maneuver.execution_time.isoformat(),
+        'expected_miss_distance_km': maneuver.expected_miss_distance,
+        'fuel_cost_kg': maneuver.fuel_cost,
+        'risk_reduction_percent': maneuver.risk_reduction
+    }
+
+    return jsonify(maneuver_data), 200
 
 
 if __name__ == '__main__':

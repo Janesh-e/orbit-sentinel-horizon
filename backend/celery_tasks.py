@@ -1,10 +1,11 @@
 from app import celery
 import requests
 from app import app,db
-from models import Conjunction
+from models import Conjunction, ManeuverPlan
 from datetime import datetime, timedelta
 import math
-from helper_functions import load_tle_objects, simulate_closest_approach, estimate_probability, classify_orbit_zone
+from helper_functions import load_tle_objects, simulate_closest_approach, estimate_probability, classify_orbit_zone, compute_maneuver_for_conjunction
+from celery import shared_task
 
 @celery.task
 def fetch_tle_satellite():
@@ -63,9 +64,11 @@ def detect_global_conjunctions():
                         object1_id=obj1['id'],
                         object1_name=obj1['name'],
                         object1_type=obj1['type'],
+                        object1_satnum=obj1['satnum'],
                         object2_id=obj2['id'],
                         object2_name=obj2['name'],
                         object2_type=obj2['type'],
+                        object2_satnum=obj2['satnum'],
                         detected_at=now,
                         conjunction_time=conj_time,
                         closest_distance_km=min_dist,
@@ -78,3 +81,20 @@ def detect_global_conjunctions():
                     )
                     db.session.add(conjunction)
         db.session.commit()
+
+@shared_task
+def run_maneuver_planning():
+    with app.app_context():
+        today = datetime.utcnow().date()
+        conjunctions_today = Conjunction.query.filter(
+            db.func.date(Conjunction.detected_at) == today
+        ).all()
+
+        count = 0
+        for conjunction in conjunctions_today:
+            plan = compute_maneuver_for_conjunction(conjunction)
+            if plan:
+                db.session.add(plan)
+                count += 1
+        db.session.commit()
+        print(f"Maneuver planning completed for {count} conjunctions.")
