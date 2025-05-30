@@ -8,6 +8,10 @@ from datetime import datetime
 import time
 import math
 from datetime import timedelta
+import networkx as nx
+import json
+
+from helper_functions import load_tle_objects, get_detected_conjunctions
 
 from celery import Celery
 from celery.schedules import crontab
@@ -658,6 +662,82 @@ def get_maneuver_by_conjunction(conjunction_id):
     }
 
     return jsonify(maneuver_data), 200
+
+@app.route('/api/space-traffic-graph')
+def space_traffic_graph():
+    G = nx.Graph()
+
+    # Load satellite and debris data (you can adjust the limits)
+    satellites = load_tle_objects('cached_active.tle', limit=100)
+    debris = load_tle_objects('cached_debris.tle', limit=100)
+    all_objects = satellites + debris
+
+    # Add nodes to graph
+    for obj in all_objects:
+        semi_major_axis_km = obj['sat'].model.a * 6378.137  # compute semi-major axis in km
+        orbit_zone = classify_orbit(semi_major_axis_km - 6371)
+        geocentric = obj['sat'].at(datetime.utcnow())
+        x, y, z = geocentric.position.km
+
+        G.add_node(
+            obj['id'],
+            name=obj['name'],
+            type=obj['type'],
+            orbit_zone=orbit_zone,
+            risk_factor=calculate_collision_risk(x, y, z, semi_major_axis_km),
+            semi_major_axis=semi_major_axis_km
+        )
+
+    # Add edges from known conjunctions
+    conjunctions = get_detected_conjunctions(past_days=7)
+    for conj in conjunctions:
+        G.add_edge(
+            conj.object1_id,
+            conj.object2_id,
+            weight=conj.closest_distance_km,
+            conjunction_time=conj.conjunction_time.isoformat(),
+            risk=conj.probability
+        )
+
+    # Optional: add edges for satellites in the same orbital shell (clustering)
+    orbit_zone_groups = {}
+    for node_id, attrs in G.nodes(data=True):
+        zone = attrs['orbit_zone']
+        orbit_zone_groups.setdefault(zone, []).append(node_id)
+
+    for group in orbit_zone_groups.values():
+        for i in range(len(group)):
+            for j in range(i + 1, len(group)):
+                if not G.has_edge(group[i], group[j]):
+                    G.add_edge(group[i], group[j], weight=9999, note='same_orbit_cluster')
+
+    # Build JSON payload
+    graph_data = {
+        'nodes': [
+            {
+                'id': n,
+                'name': d['name'],
+                'type': d['type'],
+                'orbit_zone': d['orbit_zone'],
+                'risk_factor': d['risk_factor'],
+                'semi_major_axis': d['semi_major_axis']
+            }
+            for n, d in G.nodes(data=True)
+        ],
+        'edges': [
+            {
+                'source': u,
+                'target': v,
+                'weight': d['weight'],
+                'conjunction_time': d.get('conjunction_time'),
+                'risk': d.get('risk'),
+                'note': d.get('note')
+            }
+            for u, v, d in G.edges(data=True)
+        ]
+    }
+
+    return jsonify(graph_data)
 
 
 if __name__ == '__main__':

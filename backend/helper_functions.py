@@ -221,3 +221,11 @@ def compute_maneuver_for_conjunction(conjunction):
     print(f"Generated maneuver plan: Δv={required_delta_v_m_s:.3f} m/s, fuel={fuel_cost_kg:.3f} kg")
 
     return plan
+
+def get_detected_conjunctions(past_days=7):
+    """
+    Retrieve conjunctions detected in the past N days from the database.
+    """
+    cutoff_time = datetime.utcnow() - timedelta(days=past_days)
+    conjunctions = Conjunction.query.filter(Conjunction.detected_at >= cutoff_time).all()
+    return conjunctions
