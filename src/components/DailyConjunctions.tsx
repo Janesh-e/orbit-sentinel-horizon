@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { Calendar, AlertTriangle, Clock, Zap, Target, Info, Satellite, Trash2 } from 'lucide-react';
+import { Calendar, AlertTriangle, Clock, Zap, Target, Info, Satellite, Trash2, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -29,11 +28,24 @@ interface ConjunctionDetection {
   orbit_zone: string;
 }
 
+interface ManeuverData {
+  conjunction_id: number;
+  object_id: number;
+  maneuver_type: string;
+  delta_v_m_s: number;
+  execution_time: string;
+  expected_miss_distance_km: number;
+  fuel_cost_kg: number;
+  risk_reduction_percent: number;
+}
+
 const DailyConjunctions = () => {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [conjunctions, setConjunctions] = useState<ConjunctionDetection[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [maneuverData, setManeuverData] = useState<{ [key: number]: ManeuverData | null }>({});
+  const [loadingManeuver, setLoadingManeuver] = useState<{ [key: number]: boolean }>({});
 
   const fetchConjunctions = async (date: Date) => {
     setLoading(true);
@@ -79,6 +91,25 @@ const DailyConjunctions = () => {
       return format(new Date(dateStr), 'MMM dd, yyyy');
     } catch {
       return dateStr;
+    }
+  };
+
+  const fetchManeuverData = async (conjunctionId: number) => {
+    if (maneuverData[conjunctionId] !== undefined) {
+      return; // Already fetched or attempted
+    }
+
+    setLoadingManeuver(prev => ({ ...prev, [conjunctionId]: true }));
+    
+    try {
+      const response = await axios.get(`http://localhost:5000/api/maneuver/${conjunctionId}`);
+      setManeuverData(prev => ({ ...prev, [conjunctionId]: response.data }));
+      console.log('Fetched maneuver data for conjunction', conjunctionId, ':', response.data);
+    } catch (err) {
+      console.error('Error fetching maneuver data:', err);
+      setManeuverData(prev => ({ ...prev, [conjunctionId]: null }));
+    } finally {
+      setLoadingManeuver(prev => ({ ...prev, [conjunctionId]: false }));
     }
   };
 
@@ -142,6 +173,8 @@ const DailyConjunctions = () => {
             const risk = getRiskLevel(conjunction.probability);
             const Object1Icon = getObjectIcon(conjunction.object1_type);
             const Object2Icon = getObjectIcon(conjunction.object2_type);
+            const currentManeuverData = maneuverData[conjunction.id];
+            const isLoadingManeuver = loadingManeuver[conjunction.id];
             
             return (
               <Card key={conjunction.id} className="bg-space-dark border-space-grid hover:border-space-accent/50 transition-colors">
@@ -202,18 +235,24 @@ const DailyConjunctions = () => {
                     
                     <Dialog>
                       <DialogTrigger asChild>
-                        <Button size="sm" variant="outline" className="bg-space-light border-space-grid text-white hover:bg-space-accent hover:text-space-dark">
-                          <Info className="h-3 w-3 mr-1" />
-                          Mitigations
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="bg-space-light border-space-grid text-white hover:bg-space-accent hover:text-space-dark"
+                          onClick={() => fetchManeuverData(conjunction.id)}
+                        >
+                          <Shield className="h-3 w-3 mr-1" />
+                          Mitigation Plan
                         </Button>
                       </DialogTrigger>
-                      <DialogContent className="bg-space-dark border-space-grid text-white max-w-md">
+                      <DialogContent className="bg-space-dark border-space-grid text-white max-w-lg">
                         <DialogHeader>
-                          <DialogTitle className="text-space-accent">
-                            Mitigation Strategies
+                          <DialogTitle className="text-space-accent flex items-center space-x-2">
+                            <Shield className="h-4 w-4" />
+                            <span>Collision Avoidance Maneuver</span>
                           </DialogTitle>
                         </DialogHeader>
-                        <div className="space-y-3 text-sm">
+                        <div className="space-y-4 text-sm">
                           <div className="bg-space-light p-3 rounded-lg">
                             <h4 className="font-medium mb-2">Conjunction Details:</h4>
                             <div className="text-gray-300 space-y-1">
@@ -231,18 +270,74 @@ const DailyConjunctions = () => {
                             </div>
                           </div>
                           
-                          <div className="bg-space-light p-3 rounded-lg">
-                            <h4 className="font-medium mb-2 text-orange-400">Recommended Actions:</h4>
-                            <ul className="text-gray-300 space-y-1 text-xs">
-                              <li>• Continue monitoring trajectory</li>
-                              <li>• Alert relevant space agencies</li>
-                              <li>• Prepare collision avoidance maneuvers</li>
-                              <li>• Update orbital predictions</li>
-                            </ul>
-                          </div>
+                          {isLoadingManeuver && (
+                            <div className="flex items-center justify-center py-4">
+                              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-space-accent"></div>
+                              <span className="ml-2 text-gray-400">Loading maneuver plan...</span>
+                            </div>
+                          )}
+                          
+                          {currentManeuverData && (
+                            <div className="space-y-3">
+                              <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-3">
+                                <h4 className="font-medium mb-2 text-green-400 flex items-center space-x-1">
+                                  <Target className="h-3 w-3" />
+                                  <span>Recommended Maneuver</span>
+                                </h4>
+                                <div className="text-gray-300 space-y-2 text-xs">
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                      <span className="text-gray-400">Type:</span>
+                                      <p className="font-medium capitalize">{currentManeuverData.maneuver_type}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-400">Delta-V:</span>
+                                      <p className="font-medium">{currentManeuverData.delta_v_m_s.toFixed(3)} m/s</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-400">Fuel Cost:</span>
+                                      <p className="font-medium">{currentManeuverData.fuel_cost_kg.toFixed(2)} kg</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-400">Risk Reduction:</span>
+                                      <p className="font-medium text-green-400">{currentManeuverData.risk_reduction_percent.toFixed(1)}%</p>
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-400">Execution Time:</span>
+                                    <p className="font-medium">{formatDateTime(currentManeuverData.execution_time)}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-400">Expected Miss Distance:</span>
+                                    <p className="font-medium">{currentManeuverData.expected_miss_distance_km.toFixed(2)} km</p>
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3">
+                                <h4 className="font-medium mb-2 text-blue-400">Mission Impact Assessment</h4>
+                                <ul className="text-gray-300 space-y-1 text-xs">
+                                  <li>• Minimal impact on mission objectives</li>
+                                  <li>• Fuel consumption within acceptable limits</li>
+                                  <li>• Maneuver window allows for precise execution</li>
+                                  <li>• Post-maneuver trajectory analysis recommended</li>
+                                </ul>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {currentManeuverData === null && !isLoadingManeuver && (
+                            <div className="bg-orange-900/20 border border-orange-500/30 rounded-lg p-3">
+                              <h4 className="font-medium mb-2 text-orange-400">No Maneuver Plan Available</h4>
+                              <p className="text-gray-300 text-xs">
+                                No specific maneuver plan has been generated for this conjunction. 
+                                Standard monitoring protocols are in effect.
+                              </p>
+                            </div>
+                          )}
                           
                           <div className="text-xs text-gray-500">
-                            Detailed mitigation strategies will be provided by backend analysis.
+                            Maneuver plans are generated automatically based on conjunction analysis and orbital mechanics calculations.
                           </div>
                         </div>
                       </DialogContent>
