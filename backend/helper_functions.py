@@ -4,7 +4,7 @@ import math
 import numpy as np
 from datetime import datetime, timedelta
 from skyfield.api import load, EarthSatellite
-from app import db  
+#from app import db  
 from models import Conjunction, ManeuverPlan 
 
 ts = load.timescale()
@@ -114,6 +114,7 @@ def classify_orbit_zone(obj1, obj2):
         return f"Mixed ({zone(alt1)}/{zone(alt2)})"
 
 def store_conjunction(obj1, obj2, min_dist, conj_time, min_v1, min_v2, min_rel_vel):
+    from app import db
     conjunction = Conjunction(
         object1_id=obj1['id'],
         object1_name=obj1['name'],
@@ -137,6 +138,7 @@ def store_conjunction(obj1, obj2, min_dist, conj_time, min_v1, min_v2, min_rel_v
 
 # Example Celery Task
 def detect_global_conjunctions():
+    from app import db
     now = datetime.utcnow()
     end_time = now + timedelta(days=7)
 

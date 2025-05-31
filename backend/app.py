@@ -676,7 +676,8 @@ def space_traffic_graph():
     for obj in all_objects:
         semi_major_axis_km = obj['sat'].model.a * 6378.137  # compute semi-major axis in km
         orbit_zone = classify_orbit(semi_major_axis_km - 6371)
-        geocentric = obj['sat'].at(datetime.utcnow())
+        t = ts.now()
+        geocentric = obj['sat'].at(t)
         x, y, z = geocentric.position.km
 
         G.add_node(
