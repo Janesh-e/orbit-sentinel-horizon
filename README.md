@@ -1,54 +1,83 @@
-# Welcome to your Lovable project
+ORBITAL SHIELD - Space Traffic Management Platform
 
-## Project info
+This project is a space traffic management platform that performs:
+✅ Satellite and debris simulation using TLE data
+✅ Conjunction detection and collision risk assessment
+✅ Maneuver planning for mitigation
+✅ Interactive Space Traffic Network Graph visualization
+✅ Heatmaps and analytical dashboards
 
-**URL**: https://lovable.dev/projects/d1e44da7-2bd4-4651-98d5-820e74176f1a
+Setup Instructions
 
-## How can I edit this code?
+1️⃣ Prerequisites
 
-There are several ways of editing your application.
+Python 3.9 or above
 
-**Use Lovable**
+Redis (for Celery task queue)
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/d1e44da7-2bd4-4651-98d5-820e74176f1a) and start prompting.
+SQLite (for the database)
 
-Changes made via Lovable will be committed automatically to this repo.
+Node.js + npm (if you want to run the frontend locally)
 
-**Use your preferred IDE**
+2️⃣ Clone the Repository
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+git clone https://github.com/Janesh-e/orbit-sentinel-horizon.git
+cd orbit-sentinel-horizon
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+3️⃣ Setup Python Environment
 
-Follow these steps:
+```
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+4️⃣ Setup Redis (for Celery)
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+Make sure Redis is running:
 
-# Step 3: Install the necessary dependencies.
-npm i
+```
+redis-server
+```
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+5️⃣ Start Celery Worker
+
+```
+celery -A tasks.celery worker --loglevel=info
+```
+
+6️⃣ Start the Backend Server
+
+```
+python app.py
+```
+
+7️⃣ (Optional) Start the Frontend
+
+```
+cd frontend
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Running Scheduled Tasks
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+The system automatically runs detect_global_conjunctions every 12 hours via Celery beat. To enable that:
 
-**Use GitHub Codespaces**
+celery -A tasks.celery beat --loglevel=info
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+API Endpoints
+
+/api/satellites/orbital-elements: Get satellite positions and elements
+
+/api/debris/orbital-elements: Get debris positions and elements
+
+/api/daily_conjunctions: Get detected conjunctions
+
+/api/maneuver/<conjunction_id>: Get maneuver plan for a conjunction
+
+/api/space-traffic-graph: Get graph data for network visualization
+
 
 ## What technologies are used for this project?
 
@@ -59,15 +88,7 @@ This project is built with:
 - React
 - shadcn-ui
 - Tailwind CSS
+- Flask
 
-## How can I deploy this project?
 
-Simply open [Lovable](https://lovable.dev/projects/d1e44da7-2bd4-4651-98d5-820e74176f1a) and click on Share -> Publish.
 
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
