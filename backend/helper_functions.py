@@ -231,3 +231,26 @@ def get_detected_conjunctions(past_days=7):
     cutoff_time = datetime.utcnow() - timedelta(days=past_days)
     conjunctions = Conjunction.query.filter(Conjunction.detected_at >= cutoff_time).all()
     return conjunctions
+
+# Helper function to serialize Conjunction objects
+def conj_to_dict(conj):
+    return {
+        "id": conj.id,
+        "object1_id": conj.object1_id,
+        "object1_name": conj.object1_name,
+        "object1_type": conj.object1_type,
+        "object1_satnum": conj.object1_satnum,
+        "object2_id": conj.object2_id,
+        "object2_name": conj.object2_name,
+        "object2_type": conj.object2_type,
+        "object2_satnum": conj.object2_satnum,
+        "detected_at": conj.detected_at.isoformat() if conj.detected_at else None,
+        "conjunction_time": conj.conjunction_time.isoformat() if conj.conjunction_time else None,
+        "closest_distance_km": conj.closest_distance_km,
+        "object1_velocity_km_s": conj.object1_velocity_km_s,
+        "object2_velocity_km_s": conj.object2_velocity_km_s,
+        "relative_velocity_km_s": conj.relative_velocity_km_s,
+        "probability": conj.probability,
+        "orbit_zone": conj.orbit_zone,
+        "notes": conj.notes
+    }

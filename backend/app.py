@@ -11,7 +11,7 @@ from datetime import timedelta
 import networkx as nx
 import json
 
-from helper_functions import load_tle_objects, get_detected_conjunctions
+from helper_functions import load_tle_objects, get_detected_conjunctions, conj_to_dict
 
 from celery import Celery
 from celery.schedules import crontab
@@ -503,6 +503,7 @@ def simulate_conjunction():
     object_type = data.get('type')
     days = int(data.get('days', 7))  # Default to 7 days if not provided
     threshold_km = float(data.get('threshold_km', 10.0))  # Default to 10 km
+    threshold_km = 1000
 
     # Load appropriate TLE file
     tle_file = 'cached_active.tle' if object_type == 'satellite' else 'cached_debris.tle'
@@ -642,6 +643,27 @@ def get_conjunctions_by_date():
 
     except Exception as e:
         return jsonify({"error": f"Failed to retrieve conjunctions: {str(e)}"}), 500
+
+@app.route('/api/conjunctions/upcoming/<int:satnum>')
+def get_upcoming_conjunctions(satnum):
+    now = datetime.utcnow()
+    conjunctions = Conjunction.query.filter(
+        Conjunction.conjunction_time >= now,
+        ((Conjunction.object1_satnum == satnum) | (Conjunction.object2_satnum == satnum))
+    ).order_by(Conjunction.conjunction_time.asc()).all()
+
+    results = [conj_to_dict(conj) for conj in conjunctions]
+    return jsonify(results)
+
+@app.route('/api/conjunctions/history/<int:satnum>')
+def get_conjunction_history(satnum):
+    conjunctions = Conjunction.query.filter(
+        (Conjunction.object1_satnum == satnum) | (Conjunction.object2_satnum == satnum)
+    ).order_by(Conjunction.conjunction_time.desc()).all()
+
+    results = [conj_to_dict(conj) for conj in conjunctions]
+    return jsonify(results)
+
 
 @app.route('/api/maneuver/<int:conjunction_id>', methods=['GET'])
 def get_maneuver_by_conjunction(conjunction_id):
