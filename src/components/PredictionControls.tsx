@@ -1,9 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
-import { FastForward, Play, Pause, Clock, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Clock, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import axios from 'axios';
 
@@ -58,8 +57,6 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
   onConjunctionAlert,
   dangerThreshold = 5.0
 }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [simulationSpeed, setSimulationSpeed] = useState(1);
   const [timeAhead, setTimeAhead] = useState(0);
   const [conjunctionPredictions, setConjunctionPredictions] = useState<ConjunctionPrediction[]>([]);
   const [backendConjunctions, setBackendConjunctions] = useState<BackendConjunctionResult[]>([]);
@@ -78,31 +75,10 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
       setAnalysisError(null);
       setAnalysisCompleted(false);
       setTimeAhead(0);
-      setIsPlaying(false);
       setCurrentSatelliteId(selectedSatellite?.id || null);
       onTimeChange(0);
     }
   }, [selectedSatellite?.id, currentSatelliteId, onTimeChange]);
-
-  // Auto-play functionality
-  useEffect(() => {
-    if (!isPlaying || !selectedSatellite) return;
-
-    const interval = setInterval(() => {
-      setTimeAhead(prev => {
-        const newTime = Math.min(prev + simulationSpeed, maxHours);
-        onTimeChange(newTime);
-        
-        if (newTime >= maxHours) {
-          setIsPlaying(false);
-        }
-        
-        return newTime;
-      });
-    }, 1000); // Update every second
-
-    return () => clearInterval(interval);
-  }, [isPlaying, simulationSpeed, selectedSatellite, onTimeChange]);
 
   // Debug log for conjunction data
   useEffect(() => {
@@ -198,33 +174,11 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
     }
   };
 
-  // Toggle play/pause
-  const togglePlayback = () => {
-    if (!selectedSatellite) return;
-    setIsPlaying(!isPlaying);
-  };
-
-  // Reset time to current
-  const resetTime = () => {
-    setTimeAhead(0);
-    setIsPlaying(false);
-    onTimeChange(0);
-  };
-
-  // Update speed
-  const changeSpeed = (speed: number) => {
-    setSimulationSpeed(speed);
-  };
-
   // Handle slider change
   const handleTimeSliderChange = (value: number[]) => {
     const newTime = value[0];
     setTimeAhead(newTime);
     onTimeChange(newTime);
-    // Stop auto-play when user manually changes time
-    if (isPlaying) {
-      setIsPlaying(false);
-    }
   };
 
   // Get risk level color
@@ -247,35 +201,6 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
         <div className="flex items-center">
           <Clock className="h-5 w-5 text-space-accent mr-2" />
           <h3 className="text-lg font-semibold text-white">Time Prediction</h3>
-        </div>
-        
-        <div className="flex space-x-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn(
-              "text-gray-300 hover:text-space-accent",
-              isPlaying && "text-space-accent",
-              !selectedSatellite && "opacity-50 cursor-not-allowed"
-            )}
-            onClick={togglePlayback}
-            disabled={!selectedSatellite}
-          >
-            {isPlaying ? (
-              <Pause className="h-5 w-5" />
-            ) : (
-              <Play className="h-5 w-5" />
-            )}
-          </Button>
-          
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="text-gray-300 hover:text-space-accent"
-            onClick={resetTime}
-          >
-            <RotateCcw className="h-5 w-5" />
-          </Button>
         </div>
       </div>
 
@@ -312,31 +237,6 @@ const PredictionControls: React.FC<PredictionControlsProps> = ({
         <div className="flex justify-between text-xs text-gray-400 mt-1">
           <span>Now</span>
           <span>+7 days</span>
-        </div>
-      </div>
-
-      <div className="mb-4">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-gray-400">Playback speed</span>
-        </div>
-        
-        <div className="flex space-x-2">
-          {[1, 5, 10, 24].map((speed) => (
-            <Button
-              key={speed}
-              variant="outline"
-              size="sm"
-              className={cn(
-                "flex-1 text-sm bg-space-darker border-space-grid",
-                simulationSpeed === speed ? "border-space-accent text-space-accent" : "text-gray-300",
-                !selectedSatellite && "opacity-50 cursor-not-allowed"
-              )}
-              onClick={() => changeSpeed(speed)}
-              disabled={!selectedSatellite}
-            >
-              {speed === 1 ? '1x' : `${speed}x`}
-            </Button>
-          ))}
         </div>
       </div>
 
