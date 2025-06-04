@@ -257,7 +257,7 @@ def get_orbital_elements():
     # Sort by orbit type and risk for better visualization
     # orbital_data.sort(key=lambda x: (x["orbitType"], -x["riskFactor"] if x["riskFactor"] else 0))
     
-    return jsonify(orbital_data[:100])  # Limit to prevent performance issues
+    return jsonify(orbital_data[:2100])  # Limit to prevent performance issues
 
 
 @app.route('/api/satellites/live-positions')
@@ -649,7 +649,7 @@ def get_upcoming_conjunctions(satnum):
     now = datetime.utcnow()
     conjunctions = Conjunction.query.filter(
         Conjunction.conjunction_time >= now,
-        ((Conjunction.object1_satnum == satnum) | (Conjunction.object2_satnum == satnum))
+        ((Conjunction.object1_id == satnum) | (Conjunction.object2_id == satnum))
     ).order_by(Conjunction.conjunction_time.asc()).all()
 
     results = [conj_to_dict(conj) for conj in conjunctions]
@@ -658,7 +658,7 @@ def get_upcoming_conjunctions(satnum):
 @app.route('/api/conjunctions/history/<int:satnum>')
 def get_conjunction_history(satnum):
     conjunctions = Conjunction.query.filter(
-        (Conjunction.object1_satnum == satnum) | (Conjunction.object2_satnum == satnum)
+        (Conjunction.object1_id == satnum) | (Conjunction.object2_id == satnum)
     ).order_by(Conjunction.conjunction_time.desc()).all()
 
     results = [conj_to_dict(conj) for conj in conjunctions]
